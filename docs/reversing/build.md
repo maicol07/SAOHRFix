@@ -127,15 +127,21 @@ linkate** (build date uniforme Dec 2016), il che spiega l'assenza di import audi
 | CRI AtomEx / PCx64 | 2.13.00 |
 | CRI ASR (Atom Sound Renderer) | 1.04.05 |
 | **CRI NcVoice WASAPI / PCx64** | **1.25.00** |
-| CRI NcVoice Pseudo | 1.02.00 |
+| CRI NcVoice Pseudo (output nullo/silenzioso) | 1.02.00 |
 | CRI ADX Decoder | 1.00.08 |
 | CRI File System | 2.74.01 |
+| CriFsBinder | 1.02.70 |
 | CRI CPK Analyzer | 0.99.54 |
 | CRI Mana (video) | 2.10.00 |
 | CRI Base | 2.42.07 |
 
-→ Backend audio = **CRI ADX2 su WASAPI** (spiega l'import di `ole32!CoCreateInstance`:
-`IMMDeviceEnumerator`). Dettagli in `audio.md` (blocco 4).
+→ Backend audio = **CRI ADX2, renderer ASR**, con driver di output **selezionato a runtime**
+fra NcVoice WASAPI e NcVoice Pseudo (= nessun suono). Spiega l'import di
+`ole32!CoCreateInstance`: verosimilmente `IMMDeviceEnumerator`.
+La stringa `W2014021962:WASAPI is not available. Atom library operates without sound output.`
+mostra che il fallback su Pseudo è un percorso previsto → il gioco che perde l'audio dopo un
+cambio di device di Windows probabilmente **non crasha: cade su Pseudo e resta muto**.
+Ipotesi `PROBABLE`, da verificare nel blocco 4 (`audio.md`).
 
 **Archivi**: CRI CPK. Stringhe di lookup: `pkg/data.cpk`, `pkg/%s.cpk`
 (RVA `0x801A80` / `0x801A90`) → i `.cpk` di lingua sono selezionati per nome a runtime.

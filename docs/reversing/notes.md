@@ -59,10 +59,16 @@ Build di riferimento: `sha256 1923f0d8…9e43` (vedi `build.md`).
 - `pkg/data.cpk` (RVA `0x801A80`) e `pkg/%s.cpk` (RVA `0x801A90`) sono gli unici path di
   archivio hardcoded. Il `%s` è il codice lingua (`ita`, `usa`, `ger`, …) — coerente con i
   file in `pkg/`.
-- Il lookup passa da CRI File System (`criFsBinder_BindCpk` / `criFsLoader_Load`).
-  Il punto di intercetto naturale per un VFS futuro è **il binder CRI**, non `CreateFileW`:
-  CRI FS supporta nativamente un binder di directory con priorità maggiore del CPK
-  (`criFsBinder_BindDirectory`). Da verificare se le funzioni sono raggiungibili.
+- Il lookup passa da CRI File System — `CriFsBinder/PCx64 Ver.1.02.70` (CONFIRMED, RVA
+  `0x8D31E1`). Stringhe che nominano esplicitamente le API: `CriFsBinder_GetWorkSizeBindCpk`
+  (RVA `0x8D35E0`, `0x8D4B00`), `BindFiles::` (RVA `0x8D36C8`), `criFs_InitializeLibrary` /
+  `criFs_FinalizeLibrary` (RVA `0x8D3020`).
+- Il punto di intercetto naturale per un VFS futuro è **il binder CRI**, non `CreateFileW`.
+  `BindCpk` e `BindFiles` sono presenti; **`criFsBinder_BindDirectory` non compare in nessuna
+  stringa** → `UNKNOWN` se sia linkata (l'assenza di una stringa d'errore non prova l'assenza
+  della funzione, ma non la si può dare per scontata). Il meccanismo di priorità fra binder
+  va verificato, non assunto: finché non lo è, il punto di intercetto del VFS è **indeterminato**.
+  Fallback sempre disponibile: hook su `CreateFileA/W` + `ReadFile` (grossolano ma certo).
 - Asset naming: stringhe tipo `custom_chr_tone.fx#CA68C990DF8603BDFDE0BB809E8C0570.phyre`
   suggeriscono che gli shader siano indicizzati per hash MD5-like del contenuto/permutazione.
   Da qui probabilmente anche l'uso di `ADVAPI32` CryptoAPI (hashing).

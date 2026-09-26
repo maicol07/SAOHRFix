@@ -44,6 +44,6 @@ python -m venv .venv
 | Renderer | Direct3D 11, DXGI 1.0 |
 | Scripting | Lua 5.2.1 |
 | Physics | Bullet |
-| Audio | CRI ADX2 (ASR) su **WASAPI** |
+| Audio | CRI ADX2 (ASR), output WASAPI con fallback "Pseudo" (muto) |
 | Archivi | CRI CPK (`pkg/data.cpk`, `pkg/<lang>.cpk`) |
 | Input | DirectInput8 + polling USER32 (**niente XInput, niente Raw Input**) |
