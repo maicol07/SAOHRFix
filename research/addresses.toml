@@ -1,5 +1,5 @@
 # Build-specific RVAs (code without a reliable signature, and data). Valid ONLY for build_sha256.
-# Runtime VA = module base + rva (ASLR is on).
+# Runtime VA = 0x140000000 + rva today (relocs stripped, image never rebased); keep RVAs for portability.
 
 [meta]
 build_sha256 = "1923f0d8d2cad559d6ad6e001af54ea5ea5aa70171323f42d4e1fa3d63699e43"
@@ -105,4 +105,65 @@ notes = "Chained .pdata chunk: animate (vfunc 0x50) / resize (vfunc 0x78) / acti
 [app_vtables]
 base = "0x8AD878"      # PApplication-level, slot1 = init 0x6550A0
 derived = ["0x803930", "0x8B53E0"]
+confidence = "confirmed"
+
+# ---- block 3: input / movement ---------------------------------------------
+
+[dinput8_ptr]
+rva = "0xC59F18"
+kind = "IDirectInput8A*"
+confidence = "confirmed"
+
+[dik_map_table]
+rva = "0xA625C0"
+kind = "uint8[0x60] (engine key -> DIK code)"
+confidence = "high"
+
+[input_mutexes]
+pad = "0xC69070"         # "PadMutex" handle, valid flag at 0xC69078
+keyboard = "0xC66700"    # valid flag 0xC66708
+user32_keyboard = "0xC6BF80"  # valid flag 0xC6BF88
+confidence = "confirmed"
+
+[steam_input]
+init = "0x683E40"
+poll = "0x684110"
+poll_chunk = "0x684181"
+digital_read = "0x684540"
+steam_ctx = "0xA5D790"   # SteamInternal_ContextInit context for the interface accessor
+confidence = "confirmed"
+notes = "Action names are Valve SpaceWar sample names; real use to be confirmed by INPUT-01."
+
+[sysdata_tables]
+names = "0xA55160"       # char*[80] file names
+buffers = "0xAEA4C0"     # void*[80]
+sizes = "0xAEA720"       # int[80]
+loader = "0x1D3768"
+confidence = "confirmed"
+
+[move_speed_param]
+index = "0x2C"
+buffer_ptr = "0xAEA620"
+size = "0xAEA7D0"
+layout = "float mul; float threshold[6]; float factor[6]"
+consumer = "0x271436 (chunk of 0x270E00) -> stats+0x28"
+confidence = "high"
+
+[vtables_block3]
+PInputDeviceKeyboard = "0x8AD1C0"
+PInputDeviceMouse = "0x8AD188"
+CSysInputDevice = "0x8B4D48"
+CSysKeyboard = "0x8B48A8"
+CSysPad = "0x8B4840"
+CChrPc = "0x80AE08"
+CChrStatusMove = "0x80A848"
+CPcStatusMain = "0x825900"
+CChrRtMove = "0x815BB8"
+PModifiedBulletKinematicCharacterController = "0x879BD0"
+btKinematicCharacterController = "0x8C5550"
+confidence = "confirmed"
+notes = "Resolved via tools/rtti.py (COL -> TypeDescriptor)."
+
+[chr_physics_create_chain]
+chain = ["0x1EF070 (CChrBase/CChrPc/CChrPartner vfunc 0x28)", "0x31FB90", "0x6CAEB0", "0x57F250", "0x580080", "0x5736C0"]
 confidence = "confirmed"

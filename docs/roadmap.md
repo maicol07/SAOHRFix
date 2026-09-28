@@ -8,7 +8,7 @@ Blocchi, nell'ordine di esecuzione:
 |---|---|---|---|
 | 1 | Build identification + imports | `reversing/build.md` | ✅ fatto |
 | 2 | D3D11 / render loop | `reversing/graphics.md` | ✅ fatto |
-| 3 | Input + player movement | `reversing/input.md`, `reversing/player.md` | ⬜ |
+| 3 | Input + player movement | `reversing/input.md`, `reversing/player.md` | 🟡 statica fatta, attende test runtime MOVEMENT-01/02, INPUT-01, STATE-01 |
 | 4 | Audio (CRI ADX2 / WASAPI) | `reversing/audio.md` | ⬜ |
 | 5 | Filesystem / loading (CPK) | `reversing/filesystem.md`, `reversing/loading.md` | ⬜ |
 | 6 | Render target / buffer | `reversing/rendering.md`, `reversing/temporal-readiness.md` | ⬜ |

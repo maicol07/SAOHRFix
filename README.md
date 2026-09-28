@@ -11,7 +11,7 @@ Nessun codice di runtime, nessuna patch. Solo analisi statica e documentazione.
 - Non si modifica permanentemente `sao_hr.exe`, non si tocca `pkg/*.cpk`, non si
   ridistribuisce nessun file del gioco.
 - Ogni scoperta è marcata `CONFIRMED` / `HIGH CONFIDENCE` / `PROBABLE` / `UNKNOWN`.
-- Indirizzi sempre come **RVA** + signature, mai VA assoluti (l'immagine ha ASLR attivo).
+- Indirizzi sempre come **RVA** + signature, mai VA assoluti (oggi l'exe carica sempre a `0x140000000` perché senza relocation, ma le RVA+signature servono alla portabilità fra build).
 - Ogni offset è valido solo per la build in `docs/reversing/build.md`.
 
 ## Struttura
@@ -33,6 +33,7 @@ tools/
   vcall_scan.py            call COM via vtable su campo noto
   sig.py                   genera/verifica AOB
   mods.ps1                 disattiva/riattiva mod di terzi (test VANILLA)
+  rtti.py                  classe RTTI -> vtable (e viceversa)
 ```
 
 ## Setup
@@ -52,4 +53,5 @@ python -m venv .venv
 | Physics | Bullet |
 | Audio | CRI ADX2 (ASR), output WASAPI con fallback "Pseudo" (muto) |
 | Archivi | CRI CPK (`pkg/data.cpk`, `pkg/<lang>.cpk`) |
-| Input | DirectInput8 + polling USER32 (**niente XInput, niente Raw Input**) |
+| Input | DirectInput8 (solo kbd/mouse) + polling USER32 + Steam `ISteamController` per il pad (**niente XInput, niente Raw Input**) |
+| Physics player | Bullet `btKinematicCharacterController` (wrapper Phyre) |

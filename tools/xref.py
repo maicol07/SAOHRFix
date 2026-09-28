@@ -5,6 +5,7 @@ Subcommands:
                         and direct call/jmp targets (import thunks sit outside .pdata)
   imp  <DLL!Func>       callers of an import (IAT slot refs)
   refs <rva>            instructions referencing <rva> (RIP-relative)
+  rawrefs <rva>...      brute-force RIP refs over whole .text (slow, finds leaf funcs)
   func <rva>            .pdata range containing <rva>
   dis  <rva> [max]      annotated disassembly of the .pdata range containing <rva>
 
@@ -16,6 +17,7 @@ from __future__ import annotations
 import bisect
 import pickle
 import re
+import struct
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -88,6 +90,17 @@ def func_of(img: Image, rva: int) -> tuple[int, int] | None:
     return None
 
 
+def func_root(img: Image, begin: int) -> int:
+    """Follow UNW_FLAG_CHAININFO parents to the real function start (chunked MSVC functions)."""
+    unwind = {e.struct.BeginAddress: e.struct.UnwindData for e in img.pe.DIRECTORY_ENTRY_EXCEPTION}
+    while True:
+        unw = unwind[begin]
+        ver_flags, _prolog, count, _frame = img.pe.get_data(unw, 4)
+        if not (ver_flags >> 3) & 4:
+            return begin
+        begin = struct.unpack("<I", img.pe.get_data(unw + 4 + ((count + 1) & ~1) * 2, 4))[0]
+
+
 def read_cstr(img: Image, rva: int) -> str | None:
     try:
         raw = img.pe.get_data(rva, 160)
@@ -100,6 +113,29 @@ def read_cstr(img: Image, rva: int) -> str | None:
     if len(wide) >= 8 and wide[1::2].count(0) == len(wide[1::2]):
         return "L" + wide[::2].decode("ascii", "replace")
     return None
+
+
+def raw_refs(img: Image, targets: set[int]) -> list[tuple[int, int]]:
+    """Brute-force RIP-relative refs over all of .text (covers leaf funcs missing from .pdata).
+
+    Tries every 4-byte displacement with instruction tails of 0/1/4 bytes (imm after disp),
+    then keeps only hits where a decoded instruction starting 1-4 bytes earlier resolves to target.
+    """
+    text = img.pe.sections[0]
+    data = text.get_data()
+    base = text.VirtualAddress
+    md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
+    hits: list[tuple[int, int]] = []
+    for i in range(len(data) - 4):
+        disp = int.from_bytes(data[i:i + 4], "little", signed=True)
+        for tail in (0, 1, 4):
+            if base + i + 4 + tail + disp not in targets:
+                continue
+            for back in range(1, 5):
+                insn = next(md.disasm(data[i - back:i + 4 + tail], base + i - back), None)
+                if insn is not None and insn.size == back + 4 + tail and rip_target(insn) in targets:
+                    hits.append((insn.address, rip_target(insn)))
+    return sorted(set(hits))
 
 
 def print_refs(img: Image, sources: list[int]) -> None:
@@ -146,9 +182,13 @@ def main(argv: list[str]) -> None:
         print_refs(img, load_index().get(slots[0], []))
     elif cmd == "refs":
         print_refs(img, load_index().get(int(argv[1], 16), []))
+    elif cmd == "rawrefs":
+        for src, target in raw_refs(img, {int(a, 16) for a in argv[1:]}):
+            fn = func_of(img, src)
+            print(f"  0x{src:X} -> 0x{target:X}  ({f'func 0x{fn[0]:X}' if fn else 'leaf/no .pdata'})")
     elif cmd == "func":
         fn = func_of(img, int(argv[1], 16))
-        print(f"0x{fn[0]:X}-0x{fn[1]:X}" if fn else "none")
+        print(f"0x{fn[0]:X}-0x{fn[1]:X} root 0x{func_root(img, fn[0]):X}" if fn else "none")
     elif cmd == "dis":
         cmd_dis(img, int(argv[1], 16), int(argv[2]) if len(argv) > 2 else 400)
     else:

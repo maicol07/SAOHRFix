@@ -112,3 +112,126 @@ module = "sao_hr.exe"
 rva = "0x531F50"
 signature = "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 50 83 79 28"
 description = "Creates semaphores and PhyreEngineRenderThread (entry 0x526D10)."
+
+# ---- block 3: input / movement -------------------------------------------
+
+[dinput_init]
+status = "build-local"
+confidence = "confirmed"
+module = "sao_hr.exe"
+rva = "0x64F8A0"
+signature = "40 53 48 83 EC 30 33 C9"
+description = "DirectInput8Create -> IDirectInput8* @0xC59F18 -> EnumDevices(cb 0x64E250). Prologue-only, fragile."
+
+[dinput_keyboard_create]
+status = "build-local"
+confidence = "confirmed"
+module = "sao_hr.exe"
+rva = "0x64F760"
+signature = "48 83 EC 28 48 8B 05 ?? ?? ?? ?? 48 8D 51 04 4C 8D 44 24 30 4C 8B 10 45 33 C9 48 8B C8 41 FF 52 18 85 C0 78"
+description = "CreateDevice/SetDataFormat(c_dfDIKeyboard)/SetCooperativeLevel(6)/Acquire, wraps PInputDeviceKeyboard."
+
+[dinput_mouse_create]
+status = "build-local"
+confidence = "confirmed"
+module = "sao_hr.exe"
+rva = "0x64F7F0"
+signature = "48 83 EC 28 48 8B 05 ?? ?? ?? ?? 48 8D 51 04 4C 8D 44 24 30 4C 8B 10 45 33 C9 48 8B C8 41 FF 52 18 85 C0 0F"
+description = "Same for mouse (c_dfDIMouse2), wraps PInputDeviceMouse."
+
+[keyboard_poll]
+status = "build-local"
+confidence = "confirmed"
+module = "sao_hr.exe"
+rva = "0x657840"
+signature = "48 89 5C 24 10 57 48 81 EC 30"
+description = "PInputDeviceKeyboard vfunc[5]: GetDeviceState(256), DIK->engine key map 0xA625C0. Prologue-only, fragile."
+
+[input_latch_keyboard]
+status = "build-local"
+confidence = "confirmed"
+module = "sao_hr.exe"
+rva = "0x683140"
+signature = "48 83 EC 58 48 C7 44 24 20 FE FF FF FF 0F 29 74 24 40 0F 29 7C 24 30 8B"
+description = "Main thread (animate 0x696020): lock kbd mutex 0xC66700 -> 0x682400 -> release."
+
+[input_latch_mouse]
+status = "build-local"
+confidence = "confirmed"
+module = "sao_hr.exe"
+rva = "0x687330"
+signature = "40 53 48 83 EC 20 48 8B D9 E8 ?? ?? ?? ?? 80 BB 90 00 00 00 00 74 1B"
+description = "Main thread: lock mouse mutex -> 0x6862F0 / 0x686E60 -> release."
+
+[input_latch_pad]
+status = "build-local"
+confidence = "confirmed"
+module = "sao_hr.exe"
+rva = "0x67EA70"
+signature = "48 83 EC 58 48 C7 44 24 20 FE FF FF FF 0F 29 74 24 40 0F 29 7C 24 30 E8"
+description = "Main thread: lock PadMutex 0xC69070 -> 0x67D640, 0x67E4C0 -> release."
+
+[input_latch_user32_keyboard]
+status = "build-local"
+confidence = "confirmed"
+module = "sao_hr.exe"
+rva = "0x68FBE0"
+signature = "48 83 EC 28 80 3D ?? ?? ?? ?? 00 74 1B 48 8B 0D ?? ?? ?? ?? 83 CA FF FF 15 ?? ?? ?? ?? 83 F8 FF 75 06 FF 15 ?? ?? ?? ?? E8"
+description = "Main thread: lock 0xC6BF80 -> 0x68EE20 (GetKeyboardState path) -> release."
+
+[steam_controller_init]
+status = "build-local"
+confidence = "confirmed"
+module = "sao_hr.exe"
+rva = "0x683E40"
+signature = "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 48 8B D9 89"
+description = "ISteamController action set/action handles (SpaceWar sample names). Prologue-only, fragile."
+
+[steam_controller_poll]
+status = "build-local"
+confidence = "confirmed"
+module = "sao_hr.exe"
+rva = "0x684110"
+signature = "40 53 48 83 EC 40 48 8B D9 48 8D 0D"
+description = "ActivateActionSet + digital action reads (0x684540). Prologue-only, fragile."
+
+[sysdata_get]
+status = "build-local"
+confidence = "confirmed"
+module = "sao_hr.exe"
+rva = "0x1D2FC0"
+signature = "83 3D ?? ?? ?? ?? 02 74 03 33 C0 C3 8D 81 18 FC FF FF 83 F8 01 77 1B"
+description = "Leaf. GetSysData(id): id 1000-1001 special, else [0xAEA4C0 + id*8]. move_speed_param = id 0x2C."
+
+[equip_weight_sum]
+status = "build-local"
+confidence = "high"
+module = "sao_hr.exe"
+rva = "0x26F840"
+signature = "48 89 6C 24 18 48 89 74 24 20 41 56 48 83 EC 20 45 8B"
+description = "Sums 10 equip slots, weapon values scaled by move_speed_param[0]."
+
+[bullet_kcc_setWalkDirection]
+status = "build-local"
+confidence = "high"
+module = "sao_hr.exe"
+rva = "0x72A5F0"
+# Body pattern (useWalkDirection=1 store + walkDirection field) - Bullet source is stable across builds.
+signature = "40 53 48 83 EC 30 48 8B C2 C6 81 E3 00 00 00 01 48 8D 51 50"
+description = "btKinematicCharacterController::setWalkDirection. Virtual only (slot +0x18). Target of MOVEMENT-01."
+
+[bullet_kcc_setVelocityForTimeInterval]
+status = "build-local"
+confidence = "high"
+module = "sao_hr.exe"
+rva = "0x72A5A0"
+signature = "40 53 48 83 EC 40 48 8B C2 C6 81 E3 00 00 00 00 48 8D 51 50"
+description = "btKinematicCharacterController::setVelocityForTimeInterval. Virtual only (slot +0x20). timeInterval -> +0xE4."
+
+[phyre_kcc_ctor]
+status = "build-local"
+confidence = "confirmed"
+module = "sao_hr.exe"
+rva = "0x5736C0"
+signature = "40 53 56 57 48 83 EC 60 48 C7"
+description = "PModifiedBulletKinematicCharacterController ctor (vtable 0x879BD0). Prologue-only, fragile."

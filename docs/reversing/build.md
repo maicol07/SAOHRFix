@@ -21,8 +21,11 @@ Se `sha256` cambia, ogni offset va riverificato.
 | CheckSum | 0 (non calcolato) |
 | PDB path | `D:\jenkins_home\workspace\pole4_multi_lang_cache_x64\Pole4\project\pole4.exe.pdb` |
 
-**ASLR attivo** (DYNAMIC_BASE + HIGH_ENTROPY_VA): usare sempre RVA + signature scanning,
-mai VA assoluti.
+**ASLR di fatto inattivo sul modulo principale** (corretto nel blocco 3): `DYNAMIC_BASE` è impostato, ma
+`FILE_HEADER.Characteristics = 0x23` (`RELOCS_STRIPPED | EXECUTABLE_IMAGE | LARGE_ADDRESS_AWARE`) e la directory
+relocation è vuota → il loader non può rilocare, l'immagine carica sempre a `0x140000000`.
+VA runtime = `0x140000000 + RVA` (comodo per i test). Per SAOHRFix usare comunque RVA + signature: serve alla
+portabilità fra build.
 
 ### Version info (risorsa, CONFIRMED)
 

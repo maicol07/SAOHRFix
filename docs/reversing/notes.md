@@ -20,24 +20,23 @@ REJECTED: "swapchain creata via `IDXGIFactory::CreateSwapChain`" — creata solo
 `D3D11CreateDeviceAndSwapChain` @ `0x4F7FA3`; la factory serve solo a `GetDisplayModeList`.
 REJECTED: `0x35F3C1 call [rax+0x68]` come ResizeBuffers — falso positivo dello scanner (oggetto gameplay).
 
-## Aperte — blocco 3 (input)
+## Blocco 3 — chiuso lato statico, risultati in `input.md` / `player.md`
 
-- Solo `DINPUT8!DirectInput8Create` + 45 import `USER32`. **Nessun XInput e nessun Raw Input**
-  (`RegisterRawInputDevices`/`GetRawInputData` assenti dalla lista completa USER32) — CONFIRMED.
-- Tastiera/mouse sono in **polling**: `GetKeyboardState`, `GetKeyState`, `GetCursorPos`,
-  `ScreenToClient`. Nessun `GetAsyncKeyState`.
-- Message loop classico: `RegisterClassA` + `CreateWindowExA` + `PeekMessageA` /
-  `TranslateMessage` / `DispatchMessageA` / `DefWindowProcA` → **WndProc sostituibile con
-  `SetWindowLongPtrA(GWLP_WNDPROC)`**, che il gioco stesso già usa (import presente).
-  Percorso pulito per l'input di una futura overlay ImGui.
-- `RegisterDeviceNotificationA` presente → il gioco reagisce all'hotplug dei device.
-  Vale la pena controllare se la stessa notifica copre anche i device audio (improbabile ma
-  a costo zero da verificare sugli xref).
-- `SetWindowsHookExA` / `UnhookWindowsHookEx` / `CallNextHookEx` presenti: da capire quale
-  hook installa (probabile `WH_KEYBOARD`/`WH_GETMESSAGE` per l'IME, visti gli import IMM32).
-- Ipotesi: controller Xbox gestito come device DirectInput generico → spiegherebbe le
-  segnalazioni storiche di mapping pulsanti anomalo su questo titolo. Non confermato.
-- PhyreEngine ha un layer `PInput`/`PPad` proprio: cercare stringhe `PInput`, `PPad`.
+Aperte:
+- Scopo di `SetWindowsHookExA` (`0x695990`) e del secondo percorso `GetKeyboardState` (`0x68EE20`, `0x6903B0`).
+- `RegisterDeviceNotificationA` (`0x6520FA`) + `WM_DEVICECHANGE`: da verificare nel blocco 4 se il filtro copre
+  anche endpoint audio (probabilmente solo HID/interfacce).
+- Pista animazione (solo metadati di reflection Phyre, uso per il player non dimostrato):
+  `PCharacterMotionGait`, `m_gaits`, `m_speedMultiplier`, `m_speedAdjust`, `m_animSpeedLimit`,
+  `m_motionAnimSpeedScale`, `m_animIdleSpeedThreshold`, `updateSpeed`, `getCurrentSpeed`, `setMaximumSpeed`.
+  Se il player usa `PCharacterAnimationComponent`, `m_speedMultiplier` sarebbe il candidato Sprint ideale
+  (velocità + animazione insieme). Verificabile dopo `MOVEMENT-01`.
+- `PModifiedBulletKinematicCharacterController::updateAction` override `0x58D340`: punto dove Phyre integra dt.
+- Stringhe interessanti per l'animazione del gioco: `sysMotion`, `CChrMotion`, `CChrModelBaseMot`.
+
+REJECTED: "controller Xbox gestito come device DirectInput generico" — la callback di enumerazione `0x64E250`
+accetta solo `DI8DEVTYPE_MOUSE (0x12)` e `DI8DEVTYPE_KEYBOARD (0x13)`.
+REJECTED (build.md, blocco 1): "ASLR attivo" — relocation strippate, modulo sempre a `0x140000000`.
 
 ## Aperte — blocco 4 (audio) — pista forte
 
