@@ -22,11 +22,17 @@ docs/
   roadmap.md               fasi del progetto
   reversing/
     build.md               identificazione build + import table   [blocco 1, fatto]
+    graphics.md            D3D11/DXGI/render thread/Present/WndProc [blocco 2, fatto]
+    rendering.md           fatti render + mappa call site D3D11
     notes.md               piste aperte / smentite
 research/                  signature e indirizzi (vuoto finché non verificati)
 tools/
   pe_report.py             dump header/sezioni/import
   strings_dump.py          estrazione stringhe con RVA
+  xref.py                  xref IAT/RIP/call, disasm annotato (.pdata)
+  vcall_scan.py            call COM via vtable su campo noto
+  sig.py                   genera/verifica AOB
+  mods.ps1                 disattiva/riattiva mod di terzi (test VANILLA)
 ```
 
 ## Setup

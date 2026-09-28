@@ -5,15 +5,20 @@ di competenza. Quando è smentita → `REJECTED: motivo`.
 
 Build di riferimento: `sha256 1923f0d8…9e43` (vedi `build.md`).
 
-## Aperte — blocco 2 (D3D11 / render loop)
+## Blocco 2 — chiuso, risultati in `graphics.md`
 
-- L'import è `dxgi!CreateDXGIFactory` (v1 legacy) + `d3d11!D3D11CreateDeviceAndSwapChain`.
-  Ipotesi: swapchain creata in un unico punto tramite `D3D11CreateDeviceAndSwapChain`, non
-  tramite `IDXGIFactory::CreateSwapChain`. Da verificare disassemblando gli xref all'IAT.
-  → Se confermato, il `Present` si raggiunge solo via vtable della swapchain (hook standard).
-- Cercare xref a `D3D11CreateDevice` (import separato) — potrebbe essere un fallback o un
-  percorso di device di capability check.
-- Feature level richiesto: UNKNOWN. Determina se un bridge D3D12 futuro è realistico.
+Resta aperto (basso impatto):
+- Chiamanti extra di `CreateDXGIFactory`: `0x166540`, `0x6977C0` (usano anche `CreateShaderResourceView`).
+  Ipotesi: lista modalità video per il menu opzioni / thumbnail. Non bloccante.
+- `WM_SYSKEYDOWN (0x104)` gestito in WndProc: verificare se implementa Alt+Enter custom.
+- Globale double `0xBBA9C8` aggiornato dopo ogni Present: candidato "frame time" → blocco 7.
+- `0x696020` (game app `animate`, vtable `0x8B53E0`+0x50): se `app+0x12AA` calcola un viewport **16:9
+  letterbox/pillarbox** (`w/16` vs `h/9`) in `app+0x11D0..0x11DC`. Quasi certamente il punto patchato dalla
+  mod Ultrawide. Delta time letto via `app->vfunc[0xD8]` → blocco 7.
+
+REJECTED: "swapchain creata via `IDXGIFactory::CreateSwapChain`" — creata solo da
+`D3D11CreateDeviceAndSwapChain` @ `0x4F7FA3`; la factory serve solo a `GetDisplayModeList`.
+REJECTED: `0x35F3C1 call [rax+0x68]` come ResizeBuffers — falso positivo dello scanner (oggetto gameplay).
 
 ## Aperte — blocco 3 (input)
 

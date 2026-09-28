@@ -7,7 +7,7 @@ Blocchi, nell'ordine di esecuzione:
 | # | Blocco | Output | Stato |
 |---|---|---|---|
 | 1 | Build identification + imports | `reversing/build.md` | ✅ fatto |
-| 2 | D3D11 / render loop | `reversing/graphics.md` | ⬜ |
+| 2 | D3D11 / render loop | `reversing/graphics.md` | ✅ fatto |
 | 3 | Input + player movement | `reversing/input.md`, `reversing/player.md` | ⬜ |
 | 4 | Audio (CRI ADX2 / WASAPI) | `reversing/audio.md` | ⬜ |
 | 5 | Filesystem / loading (CPK) | `reversing/filesystem.md`, `reversing/loading.md` | ⬜ |

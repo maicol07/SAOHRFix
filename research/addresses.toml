@@ -1,0 +1,108 @@
+# Build-specific RVAs (code without a reliable signature, and data). Valid ONLY for build_sha256.
+# Runtime VA = module base + rva (ASLR is on).
+
+[meta]
+build_sha256 = "1923f0d8d2cad559d6ad6e001af54ea5ea5aa70171323f42d4e1fa3d63699e43"
+
+# ---- data ----------------------------------------------------------------
+
+[renderer_singleton]
+rva = "0xBAD540"
+kind = "static object"
+confidence = "confirmed"
+notes = "Returned by accessor 0x4F6E30 (lazy-init guard 0xBAECA0). Lock via 0x4E7340."
+
+[d3d11_device_ptr]
+rva = "0xBAD5E8"   # renderer + 0xA8
+kind = "ID3D11Device*"
+confidence = "confirmed"
+
+[d3d11_context_ptr]
+rva = "0xBAD5F0"   # renderer + 0xB0
+kind = "ID3D11DeviceContext* (immediate)"
+confidence = "confirmed"
+
+[dxgi_swapchain_ptr]
+rva = "0xBAD5F8"   # renderer + 0xB8
+kind = "IDXGISwapChain*"
+confidence = "high"
+notes = "Never referenced as a global; derived from renderer_singleton + 0xB8 (this-relative uses)."
+
+[swapchain_desc]
+rva = "0xBAD600"   # renderer + 0xC0
+kind = "DXGI_SWAP_CHAIN_DESC"
+confidence = "high"
+
+[vsync_flag]
+rva = "0xBAEC80"   # renderer + 0x1740
+kind = "uint8 (Present SyncInterval 0/1)"
+confidence = "high"
+
+[hwnd]
+rva = "0xC59F08"
+kind = "HWND"
+confidence = "confirmed"
+
+[app_ptr]
+rva = "0xC59F38"
+kind = "PApplication* (game app)"
+confidence = "confirmed"
+notes = "Written by ctor 0x64A270. Fields: +0xD8 resize dirty, +0xD9 focus changed, +0xDA active, +0xDC0/+0xDC4 w/h."
+
+[minimized_flag]
+rva = "0xC59F05"
+kind = "uint8"
+confidence = "confirmed"
+
+[present_timestamp]
+rva = "0xBBA9C8"
+kind = "double"
+confidence = "probable"
+notes = "Updated after every Present from timer 0x544910. Meaning not verified."
+
+# ---- IAT / thunks ----------------------------------------------------------
+
+[iat_D3D11CreateDeviceAndSwapChain]
+rva = "0x7FEA88"
+confidence = "confirmed"
+notes = "Thunk 0x6EC7C2. Single call site 0x4F7FA3."
+
+[iat_D3D11CreateDevice]
+rva = "0x7FEA80"
+confidence = "confirmed"
+notes = "Thunk 0x6EC7BC. Call sites 0x4F7DF3 (FL probe), 0x4F7E66 (MSAA probe), 0x4F7FF2 (no-HWND path)."
+
+[iat_CreateDXGIFactory]
+rva = "0x7FEAE8"
+confidence = "confirmed"
+notes = "Thunk 0x6EC7C8. Callers 0x4F5D90, 0x166540, 0x6977C0."
+
+# ---- code without reliable signature ---------------------------------------
+
+[renderer_get]
+rva = "0x4F6E30"
+confidence = "confirmed"
+notes = "Lazy singleton accessor; pattern repeats in binary (NOT-UNIQUE). Reach via callers 0x656DF0 / 0x697C30."
+
+[render_cmd_dispatch]
+rva = "0x531570"
+confidence = "confirmed"
+notes = "Render command switch (43 cases). Present case at 0x5316D1..0x53172F."
+
+[render_cmd_exec]
+rva = "0x534B90"
+confidence = "confirmed"
+
+[render_thread_entry]
+rva = "0x526D10"
+confidence = "confirmed"
+
+[main_loop_body]
+rva = "0x652A98"
+confidence = "high"
+notes = "Chained .pdata chunk: animate (vfunc 0x50) / resize (vfunc 0x78) / active (vfunc 0x88). Real function start not isolated."
+
+[app_vtables]
+base = "0x8AD878"      # PApplication-level, slot1 = init 0x6550A0
+derived = ["0x803930", "0x8B53E0"]
+confidence = "confirmed"
