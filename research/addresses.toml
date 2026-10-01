@@ -165,5 +165,85 @@ confidence = "confirmed"
 notes = "Resolved via tools/rtti.py (COL -> TypeDescriptor)."
 
 [chr_physics_create_chain]
-chain = ["0x1EF070 (CChrBase/CChrPc/CChrPartner vfunc 0x28)", "0x31FB90", "0x6CAEB0", "0x57F250", "0x580080", "0x5736C0"]
+chain = ["0x1EF070 (CChrPc vtable byte offset 0x140)", "0x31FB90", "0x6CAEB0", "0x57F250", "0x580080", "0x5736C0"]
 confidence = "confirmed"
+
+[player_physics_relationship]
+pc_physics_id_offset = "0x9FCC"
+manager_global_ptr = "0xB148B8"
+manager_array_offset = "0x18"
+manager_count_offset = "0x134"
+record_id_offset = "0x0"
+record_wrapper_offset = "0x10"
+wrapper_kcc_offset = "0x148"
+kcc_owner_offset = "0xF0"
+confidence = "confirmed"
+notes = "Static lookup 0x6CBEB0 returns array slot, not record. Runtime PC ID 10 -> KCC; heap VAs session-only in player.md."
+
+[player_requested_movement]
+function = "0x1EA4E0"
+pc_vtable_byte_offset = "0x180"
+submit = "0x320310"
+current_position_offset = "0x9DE0"
+requested_position_offset = "0x9E10"
+wrapper_displacement_offset = "0x40"
+wrapper_scale_offset = "0xF4"
+scale_constant_rva = "0xA554E4"
+confidence = "high"
+notes = "Instruction/offset facts confirmed; active call stack not captured. Scalar 60.0 observed at wrapper+0xF4 while moving."
+
+[phyre_walk_submission]
+function = "0x58CF40"
+callsite = "0x58D31C"
+expected_return = "0x58D31F"
+kcc_velocity_offset = "0x100"
+kcc_walk_offset = "0x50"
+confidence = "high"
+notes = "Static virtual call slot 0x18; walk = velocity * scalar argument. Runtime scalar provenance and thread UNKNOWN."
+
+[player_movement_scalar_candidate]
+pc_offset = "0x9F24"
+getter = "0x1E4EE0"
+setter = "0x1E9980"
+setter_wrapper = "0x231BB0"
+confidence = "probable"
+notes = "Setter stores XMM2 here, RDX vector at +0x9E20, XMM3 at +0x9F2C. Base/max speed semantics UNKNOWN."
+
+[player_movement_speed_source]
+getter = "0x208FD0"
+base_offset = "0x9F20"
+derived_offset = "0x9F24"
+state_flag_offsets = ["0xF8A6", "0xF8AD"]
+parameter_getter = "0x274220"
+parameter_table_rva = "0xAEAB70"
+base_table_offset = "0x28"
+initialization_store = "0x1FEA03"
+derived_store = "0x206107"
+confidence = "high"
+notes = "Static base source and state factors verified. Table base 0.043 and factor 3.9 match runtime derived values; active flag semantics unverified."
+
+[player_requested_position_producer]
+function = "0x1F69B0"
+caller = "0x1EAE70"
+callsite = "0x1EAF59"
+target_offset = "0x9E20"
+integrated_position_offset = "0x9DF0"
+step_getter = "0x69B4C0"
+step_scale_offset = "0x9FE8"
+step_value_rva = "0xA63240"
+confidence = "high"
+notes = "Static target-current normalization and integration confirmed; active path and timestep units not traced."
+
+[locomotion_step]
+writer = "0x69B430"
+writer_callsite = "0x696143"
+getter = "0x69B4C0"
+input_delta_rva = "0xA63238"
+reciprocal_rva = "0xA6323C"
+step_rva = "0xA63240"
+minimum_rva = "0xC82FA8"
+maximum_rva = "0xA63244"
+fixed_step_rva = "0xA63248"
+fixed_mode_rva = "0xC82FAC"
+confidence = "high"
+notes = "Writer computes clamp(app dt * 60, minimum, maximum); seconds inferred from runtime input/reciprocal. Framerate scenarios unverified."

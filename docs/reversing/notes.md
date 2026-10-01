@@ -22,6 +22,19 @@ REJECTED: `0x35F3C1 call [rax+0x68]` come ResizeBuffers — falso positivo dello
 
 ## Blocco 3 — chiuso lato statico, risultati in `input.md` / `player.md`
 
+MOVEMENT-01 proseguito: relazione runtime `CChrPc+0x9FCC -> record fisico ->
+wrapper+0x148 -> KCC`, backlink `KCC+0xF0` confermato. Prima cattura movimento/riposo
+positiva, risultati e VA di sessione in `player.md`. Caller statico `0x58D31C`,
+catena gameplay candidata `0x1EA4E0 -> 0x320310`. Stack/thread effettivi ancora UNKNOWN.
+Correzione slot creazione CChrPc: `+0x140`, non `+0x28`.
+Velocità: getter `0x208FD0`, base `+0x9F20` da tabella `0xAEAB70+0x28`,
+risultato `+0x9F24`. Catture stick 25/50/75/100% approssimati in `player.md`;
+mediane 0.043 ai primi tre livelli, 0.1677 a fondo corsa. HIGH CONFIDENCE:
+scelta di parametro distinta a fondo corsa; soglia e gait al 75% non risolti.
+Step locomozione `0x69B430 -> A63240`: clamp(app dt * 60), getter `0x69B4C0`.
+Confronto sotto framerate diversi ancora aperto.
+MOVEMENT-02 e decisione Sprint ancora aperti; non procedere ad Audio.
+
 Aperte:
 - Scopo di `SetWindowsHookExA` (`0x695990`) e del secondo percorso `GetKeyboardState` (`0x68EE20`, `0x6903B0`).
 - `RegisterDeviceNotificationA` (`0x6520FA`) + `WM_DEVICECHANGE`: da verificare nel blocco 4 se il filtro copre

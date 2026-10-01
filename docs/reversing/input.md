@@ -1,6 +1,22 @@
 # Input
 
 Build: `sha256 1923f0d8…9e43`. RVA relative a `0x140000000`. Salvo diversa indicazione: **VANILLA STATIC**.
+MOVEMENT-01 runtime: caricamento raggiunto tramite mouse con Computer Use; gli impulsi
+di tastiera sintetici provati non hanno prodotto movimento misurabile. Movimento fisico
+dell'utente confermato tramite KCC/posizione e classificato dall'utente come tastiera;
+backend pad e percentuale stick ancora **UNKNOWN**. Prime prove analogiche invalide:
+il pad non rispondeva via Steam Input; hot plugging non verificato.
+Verifica UI successiva: Steam Input attivo, controller PlayStation riconosciuto,
+layout ufficiale AQURIA, stick sinistro assegnato a "Muovi". Processo con
+`steam_api64.dll`, `steamclient64.dll`, `gameoverlayrenderer64.dll` caricati.
+Avvio iniziale via `steam://rungameid/607890`; ulteriore riavvio tramite pulsante
+"Gioca" della libreria per separare il test del menu dalla cattura locomozione.
+Questi fatti non dimostrano che il backend pad del gioco riceva dati validi.
+L'utente ha poi confermato che il pad funziona dopo l'avvio dal pulsante "Gioca".
+**CONFIRMED, USER OBSERVATION**; causa del precedente mancato input **UNKNOWN**.
+Non attribuire la differenza al protocollo di avvio o all'hot plugging senza
+un confronto controllato.
+Questo non chiude INPUT-01 e non prova l'uso effettivo di Steam `ISteamController`.
 Nota: il modulo ha le relocation strippate → carica sempre a `0x140000000` (VA = `0x140000000 + RVA`), utile per i test runtime.
 
 ## Pipeline ricostruita

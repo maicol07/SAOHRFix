@@ -4,7 +4,7 @@ Progetto di modding/remaster per **Sword Art Online: Hollow Realization Deluxe E
 (PC / Steam AppID `607890`).
 
 **Stato attuale: Phase 0 — Initial Reverse Engineering & Technical Reconnaissance.**
-Nessun codice di runtime, nessuna patch. Solo analisi statica e documentazione.
+Analisi statica e prime letture runtime del movimento; nessuna patch o hook.
 
 ## Regole del progetto
 
@@ -34,6 +34,8 @@ tools/
   sig.py                   genera/verifica AOB
   mods.ps1                 disattiva/riattiva mod di terzi (test VANILLA)
   rtti.py                  classe RTTI -> vtable (e viceversa)
+  runtime_read.py          letture processo e ricerca vptr, senza debugger
+  movement_probe.py        relazione player/KCC e statistiche di movimento
 ```
 
 ## Setup

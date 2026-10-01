@@ -235,3 +235,35 @@ module = "sao_hr.exe"
 rva = "0x5736C0"
 signature = "40 53 56 57 48 83 EC 60 48 C7"
 description = "PModifiedBulletKinematicCharacterController ctor (vtable 0x879BD0). Prologue-only, fragile."
+
+[player_requested_position_producer]
+status = "build-local"
+confidence = "high"
+module = "sao_hr.exe"
+rva = "0x1F69B0"
+signature = "4C 8B DC 49 89 5B 18 57 48 81 EC D0 00 00 00 45 0F 29 43 C8 45 0F 29 53 A8 48 8B 05 ?? ?? ?? ??"
+description = "Target-current normalization and integration into CChrPc+0x9DF0. Unique in verified build."
+
+[phyre_walk_scalar_product]
+status = "build-local"
+confidence = "confirmed"
+module = "sao_hr.exe"
+rva = "0x58D2E2"
+signature = "48 8B 8B 48 01 00 00 F3 0F 59 89 08 01 00 00 F3 0F 59 81 04 01 00 00 F3 44 0F 59 89 00 01 00 00"
+description = "Velocity at KCC+0x100 multiplied by wrapper update scalar before setWalkDirection. Unique in verified build."
+
+[locomotion_step_writer]
+status = "build-local"
+confidence = "confirmed"
+module = "sao_hr.exe"
+rva = "0x69B430"
+signature = "0F 28 D0 0F 57 C9 F3 0F 11 15 ?? ?? ?? ?? 0F 2E CA 7A 0E 75 0C C7 05 ?? ?? ?? ?? 00 00 70 42 EB 14"
+description = "App delta time scaled by 60 and clamped into A63240. Unique in verified build; branch offsets build-local."
+
+[player_movement_speed_getter]
+status = "build-local"
+confidence = "high"
+module = "sao_hr.exe"
+rva = "0x208FD0"
+signature = "48 83 EC 68 48 8B 01 48 89 74 24 78 0F 29 74 24 50 F3 0F 10 B1 20 9F 00 00 48 8B F1"
+description = "Loads base speed at +0x9F20 and applies state/stat factors before producing +0x9F24. Unique in verified build."
