@@ -23,12 +23,18 @@ Its percentages are not the internal axis values: measure consumed input.
 `analog_probe.py` polls bounded read intervals, never atomic frames.
 `walk_trace.py` is explicitly authorized temporary diagnostic instrumentation:
 player/KCC/animation-channel instance vtables only, original calls preserved,
-restoration required. `run_perturb.py` is an authorized diagnostic only; not
-live-tested. `fps_limit.py` temporarily changes an existing NVIDIA app profile,
+restoration required. `run_perturb.py` is an authorized diagnostic only;
+live-tested at 1.10/1.25, with exact baseline bits 3E2BB98D (not float32(0.1677)).
+`fps_limit.py` temporarily changes an existing NVIDIA app profile,
 restores its original setting on exit, and requires game restart for cap changes.
 Its sequential records and cross-thread production copies are not atomic frames.
-Speed threshold and physical submission callers are identified; FPS 30/60/120,
-complete animation behavior and town/combat remain blockers. Sprint is NOT READY.
+Speed threshold and physical submission callers are identified. Actual movement
+at externally observed 30/120 FPS is consistent; cap 60 lacks external FPS
+verification. Animation is Case B: run downstream rate stays 1 with faster
+movement. A 1.25 wall test produced a large vertical excursion absent from a
+nearby vanilla comparison; matched geometry/trajectory remains unverified.
+Stop perturbations until that collision is isolated. Playback calibration,
+tight turns, slopes/stairs and town/combat remain gaps. Sprint is NOT READY.
 Runtime clamps are 0/60; actual world position is Bullet ghost+40. Downstream
 animation rate getter 6C6C80 -> 2888CC -> channel+1D0 -> 56E530 identified.
 Run each new tool's `self-check` before live use; never install drivers implicitly.

@@ -3,6 +3,8 @@
 **Aggiornamento:** le sezioni fino a “Baseline readiness” conservano il report
 manuale del commit `ddca350`. Le conclusioni correnti, che sostituiscono le sue
 incertezze e lo stato finale storico, iniziano da “Analog input path”.
+La decisione finale corrente è in **“Current validation — 2026-10-01”**:
+**NOT READY**, dopo prove live del moltiplicatore e confronto FPS.
 
 Data: 1 ottobre 2026. Build Steam PC, SHA-256
 `1923f0d8d2cad559d6ad6e001af54ea5ea5aa70171323f42d4e1fa3d63699e43`.
@@ -14,7 +16,8 @@ Fonti del progetto: [player.md](player.md), [input.md](input.md),
 Evidenze: **CONFIRMED** = istruzioni verificate o valori letti runtime;
 **HIGH CONFIDENCE** = associazione sostenuta da più evidenze, senza trace completo;
 **PROBABLE** = ipotesi da verificare; **UNKNOWN** = non dimostrato.
-Le osservazioni del gait sono dichiarazioni dell'utente, non letture dello stato animazione.
+Le osservazioni manuali iniziali del gait sono dichiarazioni dell'utente;
+le sezioni diagnostiche successive distinguono request/rate letti dal giudizio visivo.
 
 ## MOVEMENT-01 findings
 
@@ -586,3 +589,201 @@ non riattivato. La baseline vanilla precedente rimane preservata.
 Self-check shim, analog probe, perturbation e limiter passati. Nuovo codice
 perturbazione validato solo staticamente: il self-check non prova il suo
 funzionamento live. Nessuna analisi Audio o altra fase avviata.
+
+## Current validation — 2026-10-01
+
+Questa sezione sostituisce la decisione finale precedente. Input Xbox virtuale
+attraverso Steam; nessun intervento manuale richiesto durante le nuove prove.
+Le catture con shim sono diagnostiche, con chiamate originali preservate.
+Processi Steam puliti verificati senza Special K/ReShade/mod locali; una prima
+istanza con Special K caricato è stata esclusa prima di installare gli shim.
+Indirizzi heap e PID citati sono validi soltanto nella relativa sessione.
+
+### Controlled FPS test
+
+**CONFIRMED runtime:** profilo NVIDIA esistente, cap 30/60/120 e riavvio da
+Steam. Contatore dell'overlay NVIDIA osservato tramite Computer Use a **30**
+e **120–121 FPS**, anche durante movimento. Sono misure del contatore esterno,
+non un trace Present né una misura della regolarità di ogni frame.
+
+| Cap driver | FPS osservati | Mediana app dt, s | Step A63240 | Cadenza movimento app |
+|---|---:|---:|---:|---:|
+| 30 | 30 | 0.066664–0.066669 | 3.9998–4.0001 | circa 15 Hz |
+| 60 | non misurati dal contatore | 0.033318–0.033327 | 1.9991–1.9996 | circa 30 Hz |
+| 120 | 120–121 | 0.016663 | 0.9998 | circa 60 Hz |
+
+Non chiamare app dt 16.7 ms una misura di render 60 FPS: qui il contatore
+riporta 120 FPS. L'origine della differenza di cadenza resta **UNKNOWN**.
+Le condizioni 30 e 120 soddisfano il confronto fra due target molto diversi.
+Il cap 60 ha una baseline fisica, ma la sua cadenza render non è stata verificata.
+
+### Real movement speed
+
+**CONFIRMED runtime:** posizione fisica `ghost+40`, tempo monotonic. Tratto
+campo circa X=-6.5/-6.7, Z=132–183, escursione verticale circa 0.50–0.54
+su 48 unità XZ: quasi piano, non matematicamente piano. Input virtuale
+(-0.8660254,-0.5) e inverso, consumato come (-111,64)/(110,-64).
+Stesso corridoio e due direzioni; stati run contigui dopo la transizione walk.
+
+| Condizione baseline | Direzione | Tempo, s | Distanza netta XZ | Velocità netta | Velocità percorso | Escursione Y |
+|---|---|---:|---:|---:|---:|---:|
+| cap 30, contatore 30 | andata | 4.8003 | 48.2869 | 10.0591 | 10.0591 | 0.5005 |
+| cap 30, contatore 30 | ritorno | 4.8035 | 48.2960 | 10.0544 | 10.0544 | 0.5077 |
+| cap 60, ripetizione senza moltiplicazione effettiva | andata | 4.8031 | 48.2939 | 10.0547 | 10.0547 | 0.5310 |
+| cap 60, stessa cattura | ritorno | 4.8332 | 48.4731 | 10.0291 | 10.0422 | 0.5354 |
+| cap 120, contatore 120–121 | andata | 4.8167 | 48.4482 | 10.0584 | 10.0584 | 0.5076 |
+| cap 120, contatore 120–121 | ritorno | 4.8385 | 48.6259 | 10.0498 | 10.0504 | 0.5119 |
+
+La ripetizione cap 60 era il primo tentativo ×1.10, con filtro mai soddisfatto:
+parametro e submission rimasti vanilla. È utilizzabile come baseline diagnostica,
+non come prova riuscita del multiplier. Lo scarto fra medie andata/ritorno a
+30 e 120 è circa **0.03%**; non attribuire precisione superiore al poll.
+**HIGH CONFIDENCE:** velocità reale sufficientemente indipendente dal target
+nel corridoio esplorazione verificato. Non estendere il risultato a ogni stato.
+
+Le prime tratte contro roccia/pendenze e il primo allineamento cap 30 a X≈10,
+con escursione Y 1.10–1.44, sono esclusi. Il primo giro longitudinale cap 60
+aveva deviazione all'andata (9.8289 netta/9.9435 percorso); usare la ripetizione.
+Walk separato: 2.9624 s, 7.6515 unità XZ, **2.5828 unità/s**, parametro
+0.043, escursione Y 0.5424; non è una verifica walk a tutti i framerate.
+
+### DT clamp behavior
+
+**CONFIRMED runtime:** minimo 0, massimo 60. A render 30 FPS, app dt circa
+0.06667 e `dt*60` circa **4**, appena 1/15 del massimo. Non c'è saturazione
+nel test. Submission KCC/dt baseline circa **10.062** in tutte le condizioni;
+wrapper scala 60 e dt wrapper 1/60 restano invariati. La velocità fisica
+conferma che il percorso osservato non applica una seconda integrazione dt.
+Pause lunghe/saturazione e altri contesti restano **UNKNOWN**.
+
+### Animation downstream rate
+
+**CONFIRMED runtime:** request walk 100/rate 2, run 122/rate 1. Getter
+`6C6C80`, return `2888CC`, restituisce effettivamente 2/1; `channel+1E8`
+e `channel+1D0` riportano gli stessi rate nei segmenti stabili.
+La catena statica continua tramite `6C5A00 -> 6C5360 -> 56E530`, con rate
+salvato nel record animazione e usato nell'update. `A65970=1` è il fattore
+globale del getter, non app dt. Non modificarlo.
+
+`channel+1D4` cambia e fa wrap: coppie inizio/fine, per esempio run baseline
+cap 30 circa 8.00→11.93, ×1.25 circa 8.18→19.98. Le coppie attraversano
+più cicli e non misurano una durata clip. Unità, durata e fase del contatto
+piede restano **UNKNOWN**; non ricavare un factor animazione da questi numeri.
+Un breve rate 2 iniziale è la transizione walk, non playback stabile run.
+
+I poll world/rate non sono un frame atomico. Il log del getter è condiviso
+fra worker e non usa un contatore atomico: campioni/eventi possono perdersi.
+Le copie production/animation possono riferirsi alla chiamata precedente;
+evitare di classificare gait da un singolo primo record in movimento.
+
+### Perturbation 1.10x
+
+**CONFIRMED runtime:** setter player slot +3E8, `1E9980`, return `1E993F`,
+outer `206660`, XMM2 prima dello store originale +9F24. Il target +9E20
+è già costruito, ma il downstream normalizza target-current e integra usando
+il parametro: l'aumento fisico misurato esclude un effetto soltanto informativo.
+
+Il filtro iniziale confrontava float32(0.1677), bits `3E2BB98C`;
+il risultato vanilla reale è **`3E2BB98D`** (un ULP superiore). Primo tentativo
+senza effetto, poi confronto corretto e self-check aggiunto. Tutti gli altri
+filtri preservati: istanza, physics ID, F8A6/F8AD, state/pending, due chiamanti.
+
+Parametro effettivo **0.1844700128**. Cap 60, andata/ritorno:
+4.8338/4.8094 s, 53.4749/52.9701 XZ, velocità netta **11.0627/11.0139**,
+percorso **11.0633/11.0280**; KCC/dt **11.0682**. Base 0.043 e walk invariati.
+Run request 122, rate richiesto/getter/+1D0 **1.0**. Nessun crash nelle prove.
+
+### Perturbation 1.25x
+
+**CONFIRMED runtime:** parametro **0.2096250057**, KCC/dt circa **12.5775**.
+
+| Condizione | Direzione | Tempo, s | Distanza XZ | Velocità netta | Velocità percorso |
+|---|---|---:|---:|---:|---:|
+| cap 60 | andata | 3.8009 | 47.7894 | 12.5731 | 12.5731 |
+| cap 60 | ritorno | 3.8052 | 47.5901 | 12.5064 | 12.5283 |
+| contatore 30 | andata | 3.8004 | 47.7939 | 12.5759 | 12.5760 |
+| contatore 30 | ritorno | 3.7961 | 47.4335 | 12.4952 | 12.5358 |
+
+Escursione Y circa 0.52–0.53. Run request 122 e rate downstream **1.0**.
+**Case B CONFIRMED:** movimento aumenta, rate animazione resta normale.
+Non osservato un cambio gait stabile nei log. **UNKNOWN:** quantità di foot
+sliding visivo e root-motion conflict; screenshot isolati non bastano a
+misurare contatto piedi. Nessuna prova di un rate animazione corretto aggiuntivo.
+
+### Collision sanity
+
+**CONFIRMED runtime:** tratto quasi piano, start/stop e inversioni dopo
+rilascio completati. A ×1.25/cap 30, dopo rilascio due letture +9DE0 a
+un secondo di distanza sono identiche in XZ (delta 0). Questo non misura
+la latenza iniziale di arresto. Nessun crash o perdita dell'istanza.
+
+**Problema da risolvere, test interrotto:** input world circa -X presso muro
+in rovina, ×1.25/cap 30: da (-7.635,1.400,131.370) a
+(-21.823,13.401,131.564) in 3.7905 s; escursione Y **12.0007**.
+L'uscita inversa è tornata a quota normale, escursione Y 12.8185.
+Screenshot durante contatto: camera occlusa dalla parete, insufficiente per
+confermare penetration del personaggio.
+
+Confronto vanilla successivo, stessa direzione e zona, da
+(1.131,1.400,130.672) a (-18.485,1.594,131.301) in 3.7924 s:
+velocità netta 5.1750, escursione Y **0.1982**; inversione regolare.
+Partenze e traiettorie differiscono: **HIGH CONFIDENCE candidato a regressione
+presso muro/pendenza**, non prova causale di tunneling né di geometria identica.
+Va ripetuto con partenza/lane corrispondenti, prima di qualunque rollout.
+Nessun altro incremento provato dopo l'anomalia. Curva stretta, scale,
+pendenza controllata, ground contact, jitter e bouncing restano **UNKNOWN**.
+Gli ultimi impulsi di svolta erano dopo il ripristino: non contarli come
+collision sanity con multiplier.
+
+### Town/combat sanity
+
+**UNKNOWN / non eseguita:** il requisito di superare il field non è soddisfatto.
+Nessun tentativo di forzare altri branch o mantenere hook durante cambio area.
+**Exploration-only recommended** come limite per la prossima diagnostica,
+non come dichiarazione di sicurezza o prontezza. Combat/città esclusi finché
+non sono risolti il comportamento vicino al muro e il filtro di contesto.
+
+### Final Sprint architecture
+
+**HIGH CONFIDENCE candidato movement:** consumo setter player `1E9980`
+prima di +9F24, con filtri verificati e moltiplicazione del risultato originale
+una volta sola. Le prove ne confermano l'effetto fisico nel run esplorazione.
+Non è ancora un hook Sprint approvato: il filtro bits esatto è diagnostico
+e non copre variazioni di statistiche/buff o tutto il ciclo di vita player.
+
+**Case B richiede un secondo hook player-only.** Punto minimo candidato:
+return del getter rate `6C6C80`, slot +30 della sola istanza channel del
+player (già intercettato senza alterazioni per il log). Moltiplicare il return
+originale XMM0 soltanto quando la futura attivazione Sprint è valida e il
+request run 122/canale è quello verificato; altri clip e NPC invariati.
+È una proposta sostenuta dalla catena downstream, non una calibrazione live.
+Non assumere animation factor=movement factor. Riconfermare il canale dopo
+respawn/cambio area; preservare ABI e gestire worker concorrenti e teardown.
+
+Nessun default finale, binding, config o feature implementata. Nessuna modifica
+di global dt, tabella globale, argomento Bullet o posizione finale. Prima
+chiudere la collisione sospetta, poi calibrare playback e validare altri contesti.
+
+### Phase 1 readiness
+
+**NOT READY.** Il confronto fisico a FPS diversi, clamp, assenza di double-dt
+nel percorso verificato e perturbazioni ×1.10/×1.25 sono ora sostenuti da prove.
+Il caso animazione B è identificato, ma la correzione non è calibrata.
+Il sanity presso muro ha prodotto un'anomalia seria ancora da isolare: manca
+la condizione “nessun problema collisione evidente”. Non avviare Sprint o Audio.
+
+### Cleanup corrente
+
+Vptr finali letti e verificati: player `14080AE08`, KCC `140879BD0`, channel
+`140822AE8`. Tutte le catture hanno eseguito il ripristino in finally.
+Gioco chiuso: le pagine private diagnostiche sono terminate col processo.
+Pad neutralizzato/disconnesso; override NVIDIA eliminato, presenza originale
+assente verificata (`fps: null`). Overlay prestazioni NVIDIA riportato spento.
+Nessun driver installato/rimosso, eseguibile o archivio modificato.
+
+Mod locali preservate nello stato iniziale disabilitato:
+`d3d11.dll.saohrfix-off`, `SAO HR Ultrawide.asi.saohrfix-off`.
+Special K 32/64 era Running a inizio ripresa; fermato per le catture e
+riattivato dopo chiusura del gioco, ripristinando lo stato precedente.
+Self-check runtime reader, analog probe, walk trace, perturbation e FPS limiter
+passati. Commit separato dei soli tool/documentazione; nessun dump/capture grezzo.

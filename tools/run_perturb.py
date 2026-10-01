@@ -35,7 +35,8 @@ def perturb_shim(log: int, original: int, pc: int, physics_id: int, factor: floa
         code.extend(bytes.fromhex("48 8B 84 24") + struct.pack("<i", stack_offset))
         code.extend(bytes.fromhex("49 BA") + struct.pack("<Q", caller))
         require_equal(bytes.fromhex("4C 39 D0"))
-    require_equal(bytes.fromhex("66 0F 7E D0 3D") + struct.pack("<f", 0.1677))
+    # Verified getter result is one ULP above float32(0.1677).
+    require_equal(bytes.fromhex("66 0F 7E D0 3D") + struct.pack("<I", 0x3E2BB98D))
     code.extend(bytes.fromhex("B8") + struct.pack("<f", factor))
     code.extend(bytes.fromhex("50 F3 0F 59 14 24 58"))  # multiply incoming xmm2 only
     restore = len(code)
@@ -56,6 +57,7 @@ def main() -> None:
         targets = {i.op_str for i in instructions if i.mnemonic == "jne"}
         assert len(targets) == 1 and len([i for i in instructions if i.mnemonic == "jne"]) == 9
         assert len([i for i in instructions if i.mnemonic == "mulss"]) == 1
+        assert bytes.fromhex("3D 8D B9 2B 3E") in code
         print("self-check passed")
         return
     parser = argparse.ArgumentParser(description=__doc__)
