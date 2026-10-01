@@ -4,7 +4,9 @@ Progetto di modding/remaster per **Sword Art Online: Hollow Realization Deluxe E
 (PC / Steam AppID `607890`).
 
 **Stato attuale: Phase 0 — Initial Reverse Engineering & Technical Reconnaissance.**
-Analisi statica e prime letture runtime del movimento; nessuna patch o hook.
+Analisi statica, controller virtuale e trace diagnostici reversibili del movimento.
+Nessuna patch permanente; Sprint non implementato. Stato in
+[`movement-report.md`](docs/reversing/movement-report.md).
 
 ## Regole del progetto
 
@@ -36,6 +38,9 @@ tools/
   rtti.py                  classe RTTI -> vtable (e viceversa)
   runtime_read.py          letture processo e ricerca vptr, senza debugger
   movement_probe.py        relazione player/KCC e statistiche di movimento
+  virtual_pad.py           Xbox virtuale temporaneo sul ViGEmBus già installato
+  analog_probe.py          asse interno/selettori/dt, letture non atomiche
+  walk_trace.py            log temporaneo delle sole istanze player/KCC
 ```
 
 ## Setup
@@ -44,6 +49,13 @@ tools/
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install pefile capstone
 ```
+
+Il controller virtuale richiede `vgamepad` (sessione verificata: 0.1.3) e un
+ViGEmBus già installato. [API e installazione upstream](https://github.com/yannbouteiller/vgamepad).
+Per evitare l'installer del driver, usare la versione upstream che supporta
+`VGAMEPAD_SKIP_VIGEMBUS_INSTALL=true`; non assumere che ogni release PyPI lo faccia.
+I nuovi tool accettano `self-check`; il server pad legge comandi JSON da stdin,
+riporta a neutro dopo ogni impulso e si disconnette chiudendo stdin.
 
 ## Facts rapidi
 

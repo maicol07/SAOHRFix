@@ -1,5 +1,11 @@
 # Player / movement
 
+Aggiornamento 1 ottobre 2026: stato corrente in
+[movement-report.md](movement-report.md). Le catture manuali e le liste di gap
+qui sotto sono il baseline preservato nel commit `ddca350`; alcune lacune sono
+state successivamente risolte con controller virtuale e log diagnostici reversibili.
+Non interpretare le vecchie indicazioni "nessun hook"/"nessun commit" come stato corrente.
+
 Build: `sha256 1923f0d8…9e43`. RVA relative a `0x140000000` (modulo senza relocation: VA fisso).
 Classificazione evidenze: **VANILLA STATIC** salvo diversa indicazione. Prima cattura runtime
 MOVEMENT-01 eseguita senza debugger; dettagli e limiti nella sezione seguente.
@@ -141,11 +147,10 @@ Non moltiplicare nuovamente questo step per il dt in secondi.
 
 **CONFIRMED**: `0x1EAE11` legge `60.0` da RVA `0xA554E4`. Questo scalar entra in
 `0x320310`; a valle esiste un secondo prodotto per lo scalar di `0x58CF40`.
-**UNKNOWN**: la provenienza temporale di questo secondo scalar durante il normale
-update. Il chiamante statico `0x6CBD80` legge invece da `0x820D40`, dove i byte
-su disco e in memoria sono un puntatore di vtable, non un normale timestep.
-I suoi chiamanti individuati `0x31F610` e `0x31FD50` includono percorsi di setup;
-non attribuire quel valore al timestep effettivo senza trace.
+**CONFIRMED, static**: `0x6CBD80` legge lo scalar `1/60` da `0x81FD40`,
+poi chiama `0x6CC090` a `0x6CBDA0`. Correzione del precedente indirizzo
+`0x820D40`, calcolato erroneamente. Il nuovo trace del KCC conferma il caller
+`0x58D31F` e il return del wrapper `0x6CC141`; dettagli nel report aggiornato.
 
 MOVEMENT-01 ha identificato oggetti e catena candidata; resta aperta la verifica
 del caller effettivo. MOVEMENT-02 non è chiuso: le quattro prove manuali sono

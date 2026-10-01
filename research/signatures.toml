@@ -267,3 +267,19 @@ module = "sao_hr.exe"
 rva = "0x208FD0"
 signature = "48 83 EC 68 48 8B 01 48 89 74 24 78 0F 29 74 24 50 F3 0F 10 B1 20 9F 00 00 48 8B F1"
 description = "Loads base speed at +0x9F20 and applies state/stat factors before producing +0x9F24. Unique in verified build."
+
+[player_selector648]
+status = "build-local"
+confidence = "confirmed"
+module = "sao_hr.exe"
+rva = "0x20AB60"
+signature = "48 83 EC 28 48 81 C1 E0 A9 00 00 48 8B 01 FF 50 40 84 C0 0F 94 C0 48 83 C4 28 C3"
+description = "Concrete CChrPc selector648, negated embedded component predicate; not a run flag."
+
+[player_analog_run_threshold]
+status = "build-local"
+confidence = "confirmed"
+module = "sao_hr.exe"
+rva = "0x20646A"
+signature = "45 0F AF FF 45 0F AF E4 45 03 FC 41 81 FF 00 31 00 00"
+description = "Consumed signed axes squared, sum compared against 0x3100 before timed F8A6 transition."

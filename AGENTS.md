@@ -16,9 +16,14 @@ the technical baseline. Use RVAs plus verified build-local signatures.
 - Current task is MOVEMENT-01/02. No Audio, Sprint implementation, INPUT-01 or
   STATE-01 until the movement prerequisites are satisfied.
 
-Current findings and test gaps are in `docs/reversing/player.md`: player KCC
-relationship and movement/riposo capture confirmed; caller stack/thread,
-framerate scenarios, exact analog magnitude/deadzone/threshold, gait/animation
-and combat/city differences remain unverified. `runtime_read.py self-check` checks scan alignment and the
-Windows memory-region layout; `movement_probe.py` provides a read-only smoke
-capture. Physical input is required for labeled stick tests.
+Current findings are in `docs/reversing/movement-report.md` and `player.md`.
+Virtual Xbox input works through Steam with the existing ViGEmBus; use
+`virtual_pad.py` rather than asking for imprecise physical stick positions.
+Its percentages are not the internal axis values: measure consumed input.
+`analog_probe.py` polls bounded read intervals, never atomic frames.
+`walk_trace.py` is explicitly authorized temporary diagnostic instrumentation:
+player/KCC instance vtables only, original calls preserved, restoration required.
+Its sequential records and cross-thread production copies are not atomic frames.
+Speed threshold and physical submission callers are identified; FPS 30/60/120,
+complete animation behavior and town/combat remain blockers. Sprint is NOT READY.
+Run each new tool's `self-check` before live use; never install drivers implicitly.

@@ -142,3 +142,25 @@ B. Non scatta → esiste un altro percorso (da cercare a partire dal latch `0x67
 Return to me: le due risposte sì/no + call stack.
 
 VANILLA RUNTIME.
+
+## MOVEMENT-01/02: asse consumato, aggiornamento 1 ottobre 2026
+
+**CONFIRMED, static:** `0x205BC0` ottiene l'oggetto assi tramite `0x1CE560`,
+chiama `0x2D0290`/`0x2D04D0` con storico 0 e conserva gli assi signed16 in
+R12D/R15D. Ring `0xC66D60`, 64 record di `0x8C`, X/Y a `+0x80/+0x82`;
+conteggio `0xC69060`, cursore `0xC69068`. Con storico attivo, slot `(cursor-1)%64`;
+con conteggio zero, record base. L'oggetto può invertire il segno tramite `+0x70E`.
+
+**CONFIRMED, runtime:** Xbox virtuale ViGEm, mantenuto collegato durante l'avvio
+da Steam, produce assi interni e movimento. Il gioco continua a consumare il
+proprio percorso Steam; il pad virtuale non implica un nuovo percorso XInput nel gioco.
+I valori software richiesti non equivalgono a percentuali dell'asse interno.
+
+Nel ramo analogico `0x20646A`, R12D diventa X² e R15D X²+Y². Il trace del
+setter `0x1E9980`, return `0x1E993F`, outer return `0x206660`, intercetta
+questa magnitudine realmente consumata. Applicare l'interpretazione soltanto
+a questi caller verificati. Segni degli assi persi a questo punto.
+
+Polling ring, eventi del setter e submission KCC hanno fasi/thread differenti:
+nessun record è presentato come frame atomico completo. Metodo, risultati e
+limiti in [movement-report.md](movement-report.md); INPUT-01 generale non eseguito.
