@@ -33,8 +33,16 @@ at externally observed 30/120 FPS is consistent; cap 60 lacks external FPS
 verification. Animation is Case B: run downstream rate stays 1 with faster
 movement. A 1.25 wall test produced a large vertical excursion absent from a
 nearby vanilla comparison; matched geometry/trajectory remains unverified.
-Stop perturbations until that collision is isolated. Playback calibration,
-tight turns, slopes/stairs and town/combat remain gaps. Sprint is NOT READY.
+Current controlled wall captures: 1.25 has four stable runs; one of three
+effective 1.10 runs ascends through original caller 1F625A, parameter 0.5,
+clip 246 and an already-positive requested Y. Its trigger remains unresolved;
+the historical +12 Y event is not fully reproduced. Stop further perturbations
+until the 246/1F625A wall trigger is isolated; no Sprint implementation yet.
+Animation return perturbation is player-channel-only, clip 122 only; factor
+1.25 best matches baseline distance/phase, but direct foot sliding is unmeasured.
+Selector 1 / parameter 0.109005 / clip 100122 is outside the verified FF/FE
+context and must not count as an effective multiplier test. Lifecycle transitions,
+tight turns, slopes/stairs and town/combat remain deferred. Sprint is NOT READY.
 Runtime clamps are 0/60; actual world position is Bullet ghost+40. Downstream
 animation rate getter 6C6C80 -> 2888CC -> channel+1D0 -> 56E530 identified.
 Run each new tool's `self-check` before live use; never install drivers implicitly.

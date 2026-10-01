@@ -787,3 +787,173 @@ Special K 32/64 era Running a inizio ripresa; fermato per le catture e
 riattivato dopo chiusura del gioco, ripristinando lo stato precedente.
 Self-check runtime reader, analog probe, walk trace, perturbation e FPS limiter
 passati. Commit separato dei soli tool/documentazione; nessun dump/capture grezzo.
+
+## Current Sprint gate — collision reproduction and playback, 2026-10-01
+
+Questa sezione sostituisce la decisione precedente. **NOT READY**.
+I prerequisiti MOVEMENT-01/02 consolidati restano validi; nessun'altra fase iniziata.
+
+### COLLISION-REPRO-01 setup and exclusions
+
+Input tramite `virtual_pad.py`, ViGEmBus esistente, lancio Steam vanilla.
+Cap NVIDIA richiesto **30**, dt app mediano circa **0.06666 s**. Il contatore
+esterno non è stato riaperto in questa sessione: non è una nuova misura FPS.
+Camera non manovrata, nessun input allo stick destro. Impulso al muro:
+`x=-0.5, y=0.8660254, buttons=0`, **4.0 s**, poi neutro. Direzione world
+richiesta quasi -X, con piccola componente +Z; assi consumati **(-65,-111)**.
+La direzione della richiesta è registrata, non un nuovo offset yaw del player.
+
+Ritorno pilotato dal pad con feedback read-only su XYZ, nessun teleport/write
+della posizione. Target nominale ghost **(-7.673, 1.400, 131.388)**.
+Il setup NON è bit-identico: il campionamento dell'input e la fisica quantizzano
+il punto di arresto. Gli XYZ effettivi sono riportati sotto; non chiamare questo
+un confronto con identica traiettoria fisica. L'input e la durata sono identici.
+PID iniziale utile `61044`, player `213C2890`; dopo reload `77596`, player
+`213BD890`. Indirizzi solo di sessione. Nessuna mod locale caricata; servizi
+Special K fermati durante le catture.
+
+**CONFIRMED runtime:** nel primo processo il selector è passato da `FF` a `1`,
+con run parameter **0.1090050042** e clip **100122**, invece di 0.1677/122.
+Il filtro esistente ha correttamente soppresso la moltiplicazione. Il significato
+completo di selector 1 è **UNKNOWN**: non chiamarlo combat sulla sola base del
+numero. Escluse come prove Sprint `100-2/3`, `110-1/2/3`, `125-4/5` e la prima
+baseline animation. Quindi le due lane adiacenti NON dimostrano stabilità ×1.25.
+Un primo avvicinamento partito da altra posizione è stato escluso separatamente.
+`run_perturb.py` ora rifiuta l'avvio fuori dal selector verificato **FF/FE**.
+
+File locali `.cache/collision-original-<factor>-<run>.jsonl`, ignorati da Git.
+Tutte le partenze seguenti hanno ghost Y=1.400. Il parametro effettivo, non il
+nome del file, conferma l'attivazione: 1.00 → 0.1677000076;
+1.10 → 0.1844700128; 1.25 → 0.2096250057.
+
+| Factor / run | Start X | Start Z | Max ghost Y | Detector events |
+|---|---:|---:|---:|---:|
+| 1.00 / 1 | -7.6729 | 131.3875 | 1.6011 | 0 |
+| 1.00 / 5 | -7.7246 | 131.4068 | 1.5971 | 0 |
+| 1.00 / 6 | -7.7688 | 131.4069 | 1.5966 | 0 |
+| 1.00 / 7, confronto successivo | -7.4314 | 131.4036 | 1.6380 | 0 |
+| 1.10 / 4 | -7.8038 | 131.4064 | **3.7950** | **9** |
+| 1.10 / 5 | -7.4889 | 131.3863 | 1.6138 | 0 |
+| 1.10 / 6 | -7.7938 | 131.4064 | 1.7439 | 0 |
+| 1.25 / 1 | -7.4718 | 131.4006 | 1.6452 | 0 |
+| 1.25 / 2 | -7.6900 | 131.4227 | 1.6422 | 0 |
+| 1.25 / 3 | -7.5564 | 131.4245 | 1.6427 | 0 |
+| 1.25 / 6, dopo reload | -7.6345 | 131.3846 | 1.6442 | 0 |
+
+Baseline aggiuntiva `100-4`, Z=131.4999, max Y=1.5950: altra lane, non usata
+nel confronto principale. Le correzioni che non hanno superato il gate di
+posizione non hanno avviato una cattura/hook.
+
+### Vertical event: source narrowed, trigger unresolved
+
+`walk_trace.py` conserva ora campioni con ghost/player XYZ, target player +9E20,
+requested KCC vec, +9F24, assi consumati, tempo monotonic, delta XYZ fra campioni,
+campi KCC +20/+24, +40/+44/+48 e bytes +E0..+E3. Detector:
+`abs(sample deltaY)>0.5` oppure `abs(Y-startY)>2.0`.
+Sono letture sequenziali, NON frame atomici. Un delta può attraversare più update.
+
+**CONFIRMED static:** getter KCC `729EC0`, vtable +58, restituisce onGround quando
+entrambi i float **+20 e +24 sono zero**. Il predicato è replicato read-only.
+Non è una misura di contatto piede/terreno. +44 è lo step-height usato dal ramo
+step-up `72AE80`; valore runtime **0.035**, +48 **0.02**. Gli altri flags restano
+grezzi; nessun nome inventato per touching contact.
+
+**CONFIRMED runtime, 110-4:** Y sale da 1.400 a **3.795**, poi ritorna a 1.408.
+Durante la salita il clip attivo è **246**, il parametro diventa **0.5 originale**
+e il caller del setter è **1F625A**, non 1E993F/206660. Lo shim non moltiplica
+questo ramo. Esempio: ghost (-18.9486,3.0510,131.5546), player Y=1.6510,
+target player Y=2.0868, pre-wrapper/KCC requested Y circa **+0.61936**.
+Il predicato onGround campionato è vero, campi verticali +20/+24=0; flags
+campionati (1,0,1,0). Picco deltaY campionato **1.0643**, non dichiarato come
+singolo frame. L'animazione corretta non era attiva in questa prova.
+
+**CONFIRMED static:** `1F6219` carica XMM2 dalla costante `904F90` (=0.5),
+`1F6254` chiama player virtual +3E8, return **1F625A**. Il ramo considera +A025,
++9FDC e +9FF8; non sono ancora identificati tutti i writer/trigger.
+**HIGH CONFIDENCE:** questo evento verticale è richiesto dalla locomotion
+upstream e da un'altra azione, non generato soltanto dalla correzione verticale
+di Bullet. **PROBABLE:** azione di salto/superamento ostacolo associata a 246;
+non assegnare ancora un nome definitivo al clip.
+
+La cattura storica **1.4 → 13.4** NON è stata riprodotta integralmente.
+Il nuovo evento più piccolo non prova che abbia la stessa causa. Le baseline
+vicine non hanno attivato 246; il trigger intermittente resta **UNKNOWN**.
+Nessuna conclusione di tunneling/penetration, né soglia sicura 1.20 dedotta.
+Il problema non è monotono nel factor: un evento a 1.10 e quattro prove stabili
+a 1.25 non autorizzano un default inferiore senza identificarne il trigger.
+Boundary 1.15/1.20 e sanity scale/curve/pendenze rinviati a questo gate.
+
+### Player-only animation return calibration
+
+**CONFIRMED static:** `286F80` ricava l'ID attivo tramite `6C5E30`:
+indice `channel+114`, descrittori `[channel+A8]`, count `channel+B8`, stride
+**40 bytes**, ID nel descrittore **+18**. `6C48B0` verifica l'indice e risolve il
+descrittore. **CONFIRMED runtime:** FF/FE usa idle **0**, walk **100**, run
+**122**; il contesto selector 1 osservato usa 100000/100100/**100122**.
+Non usare la sola request temporanea player+90F8: il consumer la azzera.
+
+Il diagnostico chiama l'originale **6C6C80** e moltiplica soltanto XMM0 restituito
+dalla singola istanza channel zero risolta dal player. Filtri: activation byte
+privato, physics ID, F8A6=1/F8AD=0, FF/FE, parametro movement effettivo atteso,
+owner/controller/channel invariati, RCX corretto, return originale=1, indice
+valido e ricontrollato, clip attivo **122**. Nessuna scrittura ad **A65970** o +1E8.
+La restrizione caller **2888CC** è stata aggiunta dopo le catture e verificata
+dal self-check; è coerente col consumer già osservato nei trace.
+
+**CONFIRMED runtime:** movimento ×1.25, tre secondi per impulso nel corridoio,
+direzioni alternate virtual (-0.8660254,-0.5) e inversa. Baseline quattro secondi.
+Velocità fisica nei quattro test **12.53–12.56 u/s**, run +1E8 resta 1;
+downstream +1D0 diventa esattamente il factor richiesto. Walk resta a 2.0 e
+idle escluso. Una prima prova con filtro clip 100122 non ha applicato la
+correzione: esclusa e ripetuta dopo verifica dell'ID effettivo 122.
+
+Metodo di calibrazione: stessi clip/contesto, fase `channel+1D4`, ghost XZ.
+Somma degli incrementi positivi di fase e della distanza negli stessi intervalli;
+esclusi wrap, transizioni clip e gap >0.15 s. Nessuna assunzione sulle unità
+della fase o durata del clip. Il rapporto distanza/fase è un proxy di cadenza,
+NON una misura del foot sliding. Nessun bone world transform o video analizzato.
+
+| Move | Animation | Phase units/s | World units/phase | Scarto dalla baseline | Collision / stability |
+|---:|---:|---:|---:|---:|---|
+| 1.00 | 1.00 | 59.715 | 0.167700 | riferimento | corridoio stabile |
+| 1.10 | 1.00 | non calibrato qui | non misurato | UNKNOWN | muro: 1 evento 246 su 3 prove |
+| 1.20 | — | non testato | non misurato | UNKNOWN | nessun default dedotto |
+| 1.25 | 1.10 | 66.558 | 0.195600 | +16.6% | corridoio stabile |
+| 1.25 | 1.15 | 68.582 | 0.182280 | +8.7% | corridoio stabile |
+| 1.25 | 1.20 | 72.508 | 0.174696 | +4.2% | corridoio stabile |
+| 1.25 | 1.25 | 74.639 | 0.167084 | -0.4% | corridoio stabile |
+
+Baseline 52 intervalli utili, factors 38/38/37/37. Errori di fase/posizione possono
+derivare dal polling non atomico; nessun intervallo di confidenza stimato.
+**HIGH CONFIDENCE:** pairing candidato **1.25 movement / 1.25 animation** conserva
+meglio il rapporto distanza/cadenza della baseline. NON è un default approvato:
+foot sliding e impressione visiva restano non misurati direttamente.
+
+La moltiplicazione usa dati locali al singolo call, senza accumulatori condivisi
+fra worker. Il logger diagnostico condiviso resta non atomico, escluso dalle
+promesse di sincronizzazione. Cambio physics ID/owner/controller/channel abortisce
+la cattura; un nuovo channel resta originale. Activation byte azzerato al teardown,
+vptr ripristinati, codice trattenuto fino all'uscita del processo. Respawn/area
+change e distruzione concorrente non sono stati provocati: non è un lifecycle
+manager pronto per produzione.
+
+### Final decision and cleanup
+
+**NOT READY. Unico blocker operativo successivo:** isolare il trigger
+**246 / 1F625A** al muro, distinguendo input/azione originale da geometria,
+confrontandolo nello stesso setup vanilla e moltiplicato. Questo deve spiegare
+o rendere riproducibile anche l'escursione storica +12 prima di dichiararla chiusa.
+Nessuna specifica READY/config con default di release è emessa.
+Sanity aggiuntivo, town/combat e lifecycle restano verifiche subordinate al gate;
+non è stata ampliata questa sessione a quelle fasi. L3 finale non implementato.
+Binding futuro: Left Shift / L3, Hold/Toggle configurabile nella Phase 1.
+
+**CONFIRMED cleanup:** tutte le catture complete riportano `restored`; ultimo
+processo verificato con vptr player **14080AE08**, KCC **140879BD0**, channel
+**140822AE8**. Gioco chiuso, pagine diagnostiche terminate col processo;
+pad neutralizzato/disconnesso; override FPS eliminato e `fps:null` verificato.
+Mod locali nello stato iniziale disabilitato, servizi Special K 32/64 nuovamente
+Running. Nessun driver installato, EXE/CPK modificato o capture grezzo incluso.
+Self-check run perturbation, walk trace, runtime reader, virtual pad e FPS limiter
+passati; compilazione Python e `git diff --check` passati. Commit separato dei
+soli quattro file di tool/documentazione, sulla branch corrente `master`.

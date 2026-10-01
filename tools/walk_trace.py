@@ -25,6 +25,20 @@ from movement_probe import resolve
 from runtime_read import BASE, ProcessReader
 
 
+def suspect_vertical(delta_y: float, y: float, start_y: float) -> bool:
+    # Poll deltas can span several updates; this flags observations, not tunneling.
+    return abs(delta_y) > 0.5 or abs(y - start_y) > 2.0
+
+
+def active_clip(reader: ProcessReader, channel: int) -> int:
+    array = struct.unpack("<Q", reader.read(channel + 0xA8, 8))[0]
+    count = struct.unpack("<i", reader.read(channel + 0xB8, 4))[0]
+    index = struct.unpack("<i", reader.read(channel + 0x114, 4))[0]
+    if not array or not 0 <= index < count:
+        return -1
+    return struct.unpack("<i", reader.read(array + index * 40 + 0x18, 4))[0]
+
+
 def producer_shim(log: int, original: int) -> bytes:
     # At 1E993F reached from 206660, R12D is x*x and R15D is x*x+y*y.
     # These are gameplay-consumed magnitudes; signed axes are already lost.
@@ -124,7 +138,8 @@ def shim(log: int, original: int, pc: int, production: int, animation: int) -> b
 
 
 def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
-          production_builder: Callable[[int, int], bytes]) -> None:
+          production_builder: Callable[[int, int], bytes],
+          rate_builder: Callable[[int, int], bytes]) -> None:
     identity = resolve(reader, pc)
     _, wrapper, kcc = identity
     ghost = struct.unpack("<Q", reader.read(kcc + 0x10, 8))[0]
@@ -195,7 +210,11 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
         channel_copy = bytearray(reader.read(channel_vptr - 8, 0x1F0))
         struct.pack_into("<Q", channel_copy, 8 + 0x30, rate_entry)
         write(page + 0xD00, bytes(channel_copy))
-        write(rate_entry, rate_shim(rate_log, rate_target))
+        rate_code = rate_builder(rate_log, rate_target)
+        if len(rate_code) > 0x200:
+            raise ValueError("Rate diagnostic exceeds its code slot")
+        write(rate_entry, rate_code)
+        write(rate_log + 0x100, b"\x01")
         production_code = production_builder(production, setter)
         if len(production_code) > 0x200:
             raise ValueError("Production shim exceeds its private code slot")
@@ -210,9 +229,15 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
         write(kcc, struct.pack("<Q", table))
         write(pc, struct.pack("<Q", pc_table))
         write(channel, struct.pack("<Q", channel_table))
-        print(json.dumps({"status": "logging", "kcc": hex(kcc), "seconds": seconds}), flush=True)
         start = time.monotonic()
+        print(json.dumps({"status": "logging", "kcc": hex(kcc), "seconds": seconds,
+                          "monotonic_start_s": start}), flush=True)
         while time.monotonic() - start < seconds:
+            if (struct.unpack("<i", reader.read(pc + 0x9FCC, 4))[0] != identity[0]
+                    or struct.unpack("<Q", reader.read(pc + 0x4C0, 8))[0] != owner
+                    or struct.unpack("<Q", reader.read(owner + 0x108, 8))[0] != controller
+                    or struct.unpack("<Q", reader.read(controller + 0x2F0, 8))[0] != channel):
+                raise ValueError("Player/channel relationship changed; discard capture")
             record = reader.read(log, 352)
             sequence, caller, thread, instance = struct.unpack_from("<4Q", record)
             check = struct.unpack("<Q", reader.read(log, 8))[0]
@@ -233,9 +258,15 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
                                 "selector_state": list(record[56:64]),
                                 "dt": dt, "reciprocal": reciprocal,
                                 "world": struct.unpack("<4f", reader.read(ghost + 0x40, 16)),
+                                "player_world": struct.unpack("<4f", reader.read(pc + 0x9DE0, 16)),
+                                "target_world": struct.unpack("<4f", reader.read(pc + 0x9E20, 16)),
+                                "kcc_ground_fields": struct.unpack("<2f", reader.read(kcc + 0x20, 8)),
+                                "kcc_step_fields": struct.unpack("<3f", reader.read(kcc + 0x40, 12)),
+                                "kcc_contact_flags": list(reader.read(kcc + 0xE0, 4)),
                                 "channel_rate": struct.unpack("<f", reader.read(channel + 0x1E8, 4))[0],
                                 "downstream_rate": struct.unpack("<f", reader.read(channel + 0x1D0, 4))[0],
                                 "animation_phase": struct.unpack("<f", reader.read(channel + 0x1D4, 4))[0],
+                                "active_clip_id": active_clip(reader, channel),
                                 "wrapper_caller_rva": hex(outer - BASE),
                                 "wrapper_dt": struct.unpack_from("<f", record, 96)[0],
                                 "wrapper": hex(struct.unpack_from("<Q", record, 104)[0]),
@@ -311,7 +342,18 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
         for r in records:
             if r["animation_sequence"] and r["animation_copy_stable"]:
                 animation_events.setdefault(r["animation_sequence"], r)
+        collision_samples = []
+        for index, row in enumerate(records):
+            delta = [row["world"][j] - records[index - 1]["world"][j] for j in range(3)] if index else [0.0] * 3
+            collision_samples.append({key: row[key] for key in
+                                      ("t", "sequence", "world", "player_world", "target_world", "vec",
+                                       "speed", "dt", "ring_latest_axes", "kcc_ground_fields", "kcc_step_fields", "kcc_contact_flags",
+                                       "active_clip_id", "animation_phase", "downstream_rate")}
+                                     | {"delta_world": delta,
+                                        "suspect_vertical": suspect_vertical(delta[1], row["world"][1], records[0]["world"][1]),
+                                        "on_ground": all(value == 0.0 for value in row["kcc_ground_fields"])})
         print(json.dumps({"calls_observed": {hex(k): v for k, v in calls.items()},
+                          "collision_samples": collision_samples,
                           "world_position_source": "Bullet ghost +0x40; poll after submission log, non-atomic",
                           "world_segments": world_segments,
                           "downstream_rate_events": [{"caller_rva": hex(key[0]), "thread": key[1],
@@ -328,18 +370,21 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
                                              for state in sorted(states)]}))
     finally:
         try:
-            if struct.unpack("<Q", reader.read(pc, 8))[0] == pc_table:
-                write(pc, struct.pack("<Q", pc_vptr))
+            write(rate_log + 0x100, b"\x00")
         finally:
             try:
-                if struct.unpack("<Q", reader.read(channel, 8))[0] == channel_table:
-                    write(channel, struct.pack("<Q", channel_vptr))
+                if struct.unpack("<Q", reader.read(pc, 8))[0] == pc_table:
+                    write(pc, struct.pack("<Q", pc_vptr))
             finally:
                 try:
-                    if struct.unpack("<Q", reader.read(kcc, 8))[0] == table:
-                        write(kcc, struct.pack("<Q", original_vptr))
+                    if struct.unpack("<Q", reader.read(channel, 8))[0] == channel_table:
+                        write(channel, struct.pack("<Q", channel_vptr))
                 finally:
-                    api.CloseHandle(handle)
+                    try:
+                        if struct.unpack("<Q", reader.read(kcc, 8))[0] == table:
+                            write(kcc, struct.pack("<Q", original_vptr))
+                    finally:
+                        api.CloseHandle(handle)
         if struct.unpack("<Q", reader.read(kcc, 8))[0] != original_vptr:
             raise RuntimeError("KCC vptr restoration failed or another tool changed it")
         if struct.unpack("<Q", reader.read(pc, 8))[0] != pc_vptr:
@@ -352,6 +397,9 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
 
 def main() -> None:
     if sys.argv[1:] == ["self-check"]:
+        assert not suspect_vertical(0.5, 3.4, 1.4)
+        assert suspect_vertical(-0.51, 1.4, 1.4)
+        assert suspect_vertical(0.0, 13.4, 1.4)
         import capstone
         code = shim(0x12340000, BASE + 0x72A5F0, 0x213A7890, 0x12341A00, 0x12341B00)
         instructions = list(capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64).disasm(code[:-8], 0))
@@ -379,7 +427,7 @@ def main() -> None:
         parser.error("seconds must be finite and within 0..60")
     reader = ProcessReader(args.pid)
     try:
-        trace(reader, args.pid, args.pc, args.seconds, producer_shim)
+        trace(reader, args.pid, args.pc, args.seconds, producer_shim, rate_shim)
     finally:
         reader.close()
 
