@@ -29,6 +29,9 @@ def selector_result(player: bytes) -> int:
 def sample(reader: ProcessReader, pc: int, seconds: float) -> None:
     identity = resolve(reader, pc)
     _, wrapper, kcc = identity
+    ghost = struct.unpack("<Q", reader.read(kcc + 0x10, 8))[0]
+    if struct.unpack("<Q", reader.read(ghost, 8))[0] != BASE + 0x8C3F08:
+        raise ValueError("Unexpected Bullet player ghost object")
     start = time.monotonic()
     groups: dict[tuple[int, int, int, int, int], list[tuple[float, ...]]] = defaultdict(list)
     transitions: list[dict[str, object]] = []
@@ -36,6 +39,7 @@ def sample(reader: ProcessReader, pc: int, seconds: float) -> None:
     rejected = 0
     max_span = 0.0
     positions: list[tuple[float, float, float, float]] = []
+    world_records: list[tuple[float, tuple[int, int, int, int, int], float, tuple[float, ...], float, float, float]] = []
     motion_requests: Counter[tuple[int, int, int, float]] = Counter()
     print(json.dumps({"status": "sampling", "identity": identity}), flush=True)
     while time.monotonic() - start < seconds:
@@ -52,6 +56,13 @@ def sample(reader: ProcessReader, pc: int, seconds: float) -> None:
         scale = struct.unpack("<f", reader.read(wrapper + 0xF4, 4))[0]
         velocity = struct.unpack("<4f", reader.read(kcc + 0x100, 16))
         dt, _, step = struct.unpack("<3f", reader.read(BASE + 0xA63238, 12))
+        position = struct.unpack("<4f", reader.read(ghost + 0x40, 16))
+        owner = struct.unpack("<Q", reader.read(pc + 0x4C0, 8))[0]
+        controller = struct.unpack("<Q", reader.read(owner + 0x108, 8))[0]
+        channel = struct.unpack("<Q", reader.read(controller + 0x2F0, 8))[0]
+        if not channel or struct.unpack("<Q", reader.read(channel, 8))[0] != BASE + 0x822AE8:
+            raise ValueError("Unexpected player animation channel")
+        rate = struct.unpack("<f", reader.read(channel + 0x1E8, 4))[0]
         after_cursor = struct.unpack("<i", reader.read(BASE + 0xC69068, 4))[0]
         after = time.monotonic_ns()
         max_span = max(max_span, (after - before) / 1e6)
@@ -69,8 +80,8 @@ def sample(reader: ProcessReader, pc: int, seconds: float) -> None:
         groups[key].append((speed, dt, magnitude, step, math.hypot(pre[0], pre[2]),
                             scale, math.hypot(velocity[0], velocity[2]),
                             magnitude / dt if dt > 0 else 0.0))
-        position = struct.unpack_from("<4f", player, 0)
         positions.append(position)
+        world_records.append((time.monotonic() - start, key, speed, position, rate, dt, step))
         if key != previous:
             transitions.append({"t": (before / 1e9) - start, "axes_selectors": key,
                                 "speed": speed, "step": step})
@@ -80,7 +91,33 @@ def sample(reader: ProcessReader, pc: int, seconds: float) -> None:
         raise ValueError("Player physics identity changed during capture")
     if not positions:
         raise ValueError("No stable input-ring record acquired during capture")
+    segments: list[list[tuple[float, tuple[int, int, int, int, int], float, tuple[float, ...], float, float, float]]] = []
+    for record in world_records:
+        if record[1][0] ** 2 + record[1][1] ** 2 == 0:
+            continue
+        if not segments or record[1:3] != segments[-1][-1][1:3] or record[0] - segments[-1][-1][0] > 0.2:
+            segments.append([])
+        segments[-1].append(record)
+    world_summary = []
+    for segment in segments:
+        first, last = segment[0], segment[-1]
+        elapsed = last[0] - first[0]
+        if elapsed < 1:
+            continue
+        distance = math.hypot(last[3][0] - first[3][0], last[3][2] - first[3][2])
+        path_distance = sum(math.hypot(b[3][0] - a[3][0], b[3][2] - a[3][2])
+                            for a, b in zip(segment, segment[1:]))
+        world_summary.append({"axes_selectors": first[1], "parameter": first[2],
+                              "start_t": first[0], "elapsed": elapsed, "start": first[3], "end": last[3],
+                              "world_xz_distance": distance, "world_xz_speed": distance / elapsed,
+                              "world_xz_path_distance": path_distance, "world_xz_path_speed": path_distance / elapsed,
+                              "median_dt": statistics.median(r[5] for r in segment),
+                              "median_step": statistics.median(r[6] for r in segment),
+                              "height_range": max(r[3][1] for r in segment) - min(r[3][1] for r in segment),
+                              "channel_rates": dict(Counter(r[4] for r in segment))})
     print(json.dumps({"elapsed": time.monotonic() - start, "atomic": False,
+                      "world_position_source": "player Bullet ghost world transform origin +0x40",
+                      "world_segments": world_summary,
                       "rejected_ring_changes": rejected, "max_read_span_ms": max_span,
                       "start": positions[0], "end": positions[-1],
                       "transitions": transitions[:100], "transition_count": len(transitions),

@@ -446,3 +446,143 @@ Audio, INPUT-01/STATE-01 generali, graphics, ImGui e Sprint non avviati.
 Baseline e risultati conservati in commit separati. Verifiche finali:
 self-check reader/pad/probe/shim, sintassi Python/TOML e unicità firme build-local.
 Solo sorgenti/documentazione; nessun dump, grande cattura o binario proprietario.
+
+## Continuazione FPS/animation — 2026-10-01: conclusione corrente NOT READY
+
+Decisione diagnostica prima della prova: usare il consumo del risultato tramite
+il setter player `1E9980`, slot `+3E8`, chiamato da `1E993F` nel percorso
+`206660`, prima dello store originale in `+9F24`. Questo punto evita un detour
+nel corpo condiviso di `208FD0` e riusa la copia del vtable della sola istanza.
+Il parametro in ingresso XMM2 viene moltiplicato solo per il player risolto,
+physics ID invariato, F8A6=1, F8AD=0, state=FF/pending=FE, entrambi i return
+address verificati e parametro originale esattamente `0.1677`. Solo fattori
+1.10/1.25. Nessuna modifica di dt, tabelle, Bullet, NPC o posizione finale.
+Questa scelta non costituisce ancora una validazione dell'hook Sprint.
+
+### Controlled FPS test
+
+**CONFIRMED runtime:** limiter NVIDIA applicato al solo profilo esistente di
+`sao_hr.exe` tramite NVAPI DRS. Nessuna injection aggiunta e nessuna scrittura
+al time scale del gioco. Override originale assente (`SETTING_NOT_FOUND`).
+Il cap salvato a 30 produceva app dt circa 0.06666 s (~15 aggiornamenti/s).
+Cambiarlo a 60 con il processo ancora vivo non modificava la cadenza.
+Dopo riavvio da Steam con cap 60, app dt circa 0.03333 s e ~30 submission KCC/s.
+Il valore del cap non è una misura indipendente del render FPS.
+
+**UNKNOWN:** confronto controllato di velocità reale a ~30/60/120. Nessuna
+seconda condizione con percorso piano e input valido è stata completata.
+L'ultima cattura di 45 s era a riposo: 1345 submission, nessun segmento in
+movimento. Non usarla come prova di framerate independence.
+
+### Real movement speed
+
+**CONFIRMED runtime/static:** `[KCC+0x10]` punta al ghost Bullet, vptr RVA
+`8C3F08`; origine world transform a `ghost+0x40`. XZ coincide a riposo con
+`CChrPc+0x9DE0`; Y ha offset di centro capsula di circa 1.4. La misura usa
+tempo monotonic e posizione fisica; resta un poll non atomico.
+
+Tratte preliminari con cap 30, app ~15 Hz, senza perturbazione:
+
+| Input interno | Tempo s | Distanza netta XZ | Velocità XZ | Escursione Y | Utilizzabilità |
+|---|---:|---:|---:|---:|---|
+| (0, +127) | 4.8494 | 1.3442 | 0.2772 | 0.2819 | Bloccato presso ostacolo |
+| (0, -128) | 4.8576 | 45.6614 | 9.4000 | 2.5279 | Terreno irregolare |
+
+Entrambe avevano parametro run `0.1677`, pre-wrapper/KCC coerenti e
+KCC XZ/app_dt circa 10.062. Il grande scarto della prima tratta dimostra
+perché la richiesta KCC non sostituisce la distanza reale. Entrambe escluse
+dal confronto su piano. Un'altra cattura con posizione `+9DE0`, precedente
+all'uso del ghost, attraversava terreno irregolare ed è anch'essa esclusa.
+I tool ora riportano anche lunghezza del percorso XZ, oltre alla distanza
+netta; nessun risultato nuovo di tale metrica è disponibile in movimento.
+
+### DT clamp behavior
+
+**CONFIRMED runtime:** minimo RVA `C82FA8` = **0.0**, massimo `A63244` =
+**60.0**. Con app dt ~0.06666 il valore `A63240` era ~4; con dt ~0.03333
+era ~2. Entrambi lontani dal massimo. A 30 aggiornamenti/s, `dt*60` ~2
+non si avvicina al clamp. Non confondere aggiornamenti app con render FPS.
+Nessuna prova di saturazione del clamp eseguita.
+
+### Animation downstream rate
+
+**CONFIRMED static:** `28B720 -> 287E70` seleziona il canale del controller
+tramite `+2F0 + 8*index`; `287E90` scrive il rate a `channel+1E8`.
+Slot `+30` del vtable `822AE8` chiama `6C6C80`: restituisce
+`[A65970] * [channel+1E8]`. `A65970` letto runtime = **1.0**:
+è un fattore globale, non app dt.
+
+`2888A0` chiama tale slot a `2888C9`, return address `2888CC`, passa XMM0
+in XMM1 a `6C5A00`, che salva `channel+1D0`, poi entra in `6C5360`.
+Nel suo blocco continuato `6C550F`, l'istruzione `6C5619` legge `+1D0`
+in XMM2 e `6C5621` chiama `56E530`. Quest'ultimo seleziona un record
+animation di stride `B0`, salva il parametro a `record+C` e `record+50`
+e aggiorna `+54`. Questa è la catena del parametro di playback individuata;
+durata del clip e fase effettiva nel tempo restano **UNKNOWN**.
+
+**CONFIRMED runtime diagnostico, riposo:** getter osservato con caller
+`2888CC`, campo `+1E8=1.0`, risultato `1.0`; poll finale `+1D0=1.0`.
+I log sono stati osservati su più worker thread: conteggi riportati sono
+campioni, non conteggi esatti di chiamate; letture cross-thread non atomiche.
+Baseline storica walk request 100/rate 2 e run request 122/rate 1 preservata.
+Nessuna nuova baseline downstream walk/run sincronizzata acquisita.
+
+### Perturbation 1.10x
+
+**UNKNOWN / non eseguita.** `run_perturb.py` è preparato e passa self-check
+del codice macchina e dei nove filtri, ma non è stato avviato sul gioco.
+Nessun dato su velocità reale, sliding, gait o root-motion conflict.
+
+### Perturbation 1.25x
+
+**UNKNOWN / non eseguita.** La stabilità a 1.10 non è ancora dimostrata.
+
+### Collision sanity
+
+**UNKNOWN con perturbazione.** Il rallentamento presso l'ostacolo riguarda
+solo la baseline originale. Non convalida muro, svolta stretta, pendenza,
+scale, stop o inversione con moltiplicatore.
+
+### Town/combat sanity
+
+**UNKNOWN / non eseguita:** manca prima la validazione del field.
+
+### Final Sprint architecture
+
+**PROBABLE candidata, non finale:** consumo del risultato locomotion nella
+sola istanza player, prima dello store originale, mantenendo wrapper/KCC e
+compensazione dt originali. Non applicare un secondo dt. Il filtro diagnostico
+usa identità/physics ID e stato già run; non forza F8A6 o stati.
+La risposta animation A/B/C/D non è classificabile. Nessun hook animation
+aggiuntivo scelto e nessuna equivalenza fattore-speed/fattore-rate assunta.
+Nessuna specifica PoC autorizzabile finché i test non chiudono questi punti.
+
+### Phase 1 readiness
+
+**NOT READY — conclusione corrente.** Aggiunti clamp effettivi, posizione
+world fisica e catena downstream rate. Restano confronto FPS con movimento
+reale, baseline downstream walk/run, 1.10/1.25, classificazione animation,
+collision sanity e town/combat. Non è stata implementata una feature Sprint.
+
+### Cleanup e interruzione
+
+Computer Use interrotto dall'utente con Escape: esperimenti arrestati, nessun
+ulteriore comando UI. La finestra era uscita dal desktop accessibile; una
+richiesta di disponibilità era ancora pendente. Un impulso senza il campo
+obbligatorio `buttons` è stato rifiutato dal server pad prima dell'invio;
+il dispositivo è stato riconnesso, poi disconnesso nel cleanup.
+
+Tre vptr verificati dopo la cattura: player `80AE08`, KCC `879BD0`, channel
+`822AE8`. Nessuna perturbazione o patch attiva. Pagina privata diagnostica
+di 8 KiB mantenuta fino all'uscita del processo per evitare return in memoria
+liberata. Gioco PID session-only 83096 lasciato aperto e rispondente.
+Override NVIDIA eliminato e assenza originale verificata (`fps: null`);
+la cadenza dell'istanza già avviata può conservarsi fino al prossimo riavvio.
+Pad virtuale disconnesso; nessun driver installato o rimosso.
+
+Mod locali ancora disabilitate reversibilmente: `d3d11.dll.saohrfix-off` e
+`SAO HR Ultrawide.asi.saohrfix-off`, nessuna mod locale attiva. Special K
+non riattivato. La baseline vanilla precedente rimane preservata.
+Self-check shim, analog probe, perturbation e limiter passati. Nuovo codice
+perturbazione validato solo staticamente: il self-check non prova il suo
+funzionamento live. Nessuna analisi Audio o altra fase avviata.

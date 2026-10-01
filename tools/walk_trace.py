@@ -1,8 +1,8 @@
-"""Reversible, player-KCC-only logging shim. No movement values are changed.
+"""Reversible player, KCC and animation-channel logging shims.
 
 Usage: walk_trace.py PID CChrPc-VA seconds
-Copies the player and KCC instance vtables, logs entries, calls the originals.
-Restores both instance vptrs in finally. The private 8 KiB page stays until game exit:
+Copies three instance vtables, logs entries, calls the originals.
+Restores all instance vptrs in finally. The private 8 KiB page stays until game exit:
 freeing executable memory while a thread may still return through it is unsafe.
 This is diagnostic instrumentation, not an unmodified vanilla capture.
 """
@@ -15,8 +15,11 @@ from ctypes import wintypes as wt
 import json
 import math
 import struct
+import statistics
 import sys
 import time
+from collections import Counter
+from collections.abc import Callable
 
 from movement_probe import resolve
 from runtime_read import BASE, ProcessReader
@@ -55,6 +58,22 @@ def animation_shim(log: int, original: int) -> bytes:
         code += bytes.fromhex(source + " 49 89 42") + bytes([destination])
     code += bytes.fromhex("49 FF 02 41 5B 41 5A 58 9D FF 25 00 00 00 00")
     code += struct.pack("<Q", original)
+    return bytes(code)
+
+
+def rate_shim(log: int, original: int) -> bytes:
+    # Original getter only computes xmm0 = global factor * channel+1E8.
+    # Invoke it with aligned shadow space, log its actual return, return unchanged.
+    code = bytearray.fromhex("9C 50 41 52 41 53 49 BA") + struct.pack("<Q", log)
+    code += bytes.fromhex("49 FF 02")
+    for source, destination in (("48 8B 44 24 20", 8),
+                                ("65 48 8B 04 25 48 00 00 00", 16),
+                                ("48 89 C8", 24),
+                                ("8B 81 E8 01 00 00", 40)):
+        code += bytes.fromhex(source + " 49 89 42") + bytes([destination])
+    code += bytes.fromhex("48 83 EC 28 48 B8") + struct.pack("<Q", original)
+    code += bytes.fromhex("FF D0 48 83 C4 28 66 0F 7E C0 49 BA") + struct.pack("<Q", log)
+    code += bytes.fromhex("49 89 42 20 49 FF 02 41 5B 41 5A 58 9D C3")
     return bytes(code)
 
 
@@ -104,9 +123,13 @@ def shim(log: int, original: int, pc: int, production: int, animation: int) -> b
     return bytes(code)
 
 
-def trace(reader: ProcessReader, pid: int, pc: int, seconds: float) -> None:
+def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
+          production_builder: Callable[[int, int], bytes]) -> None:
     identity = resolve(reader, pc)
     _, wrapper, kcc = identity
+    ghost = struct.unpack("<Q", reader.read(kcc + 0x10, 8))[0]
+    if struct.unpack("<Q", reader.read(ghost, 8))[0] != BASE + 0x8C3F08:
+        raise ValueError("Unexpected player Bullet ghost")
     original_vptr = BASE + 0x879BD0
     original = struct.unpack("<Q", reader.read(original_vptr + 0x18, 8))[0]
     if original != BASE + 0x72A5F0:
@@ -123,6 +146,15 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float) -> None:
     mode = struct.unpack("<i", reader.read(BASE + 0xC69060, 4))[0]
     if mode != 64:
         raise ValueError("Trace requires the verified 64-entry input history mode")
+    owner = struct.unpack("<Q", reader.read(pc + 0x4C0, 8))[0]
+    controller = struct.unpack("<Q", reader.read(owner + 0x108, 8))[0]
+    channel = struct.unpack("<Q", reader.read(controller + 0x2F0, 8))[0]
+    channel_vptr = BASE + 0x822AE8
+    if struct.unpack("<Q", reader.read(channel, 8))[0] != channel_vptr:
+        raise ValueError("Unexpected player animation channel vptr")
+    rate_target = struct.unpack("<Q", reader.read(channel_vptr + 0x30, 8))[0]
+    if rate_target != BASE + 0x6C6C80:
+        raise ValueError("Unexpected channel rate getter")
     api = reader.api
     api.VirtualAllocEx.argtypes = [wt.HANDLE, ct.c_void_p, ct.c_size_t, wt.DWORD, wt.DWORD]
     api.VirtualAllocEx.restype = ct.c_void_p
@@ -147,6 +179,8 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float) -> None:
     table, entry, log = page + 8, page + 0x1000, page + 0x1800
     pc_table, producer_entry, production = page + 0x308, page + 0x1400, page + 0x1A00
     animation_entry, animation = page + 0x1600, page + 0x1B00
+    channel_table, rate_entry, rate_log = page + 0xD08, page + 0x1C00, page + 0x1E00
+    rate_events: Counter[tuple[int, int, float, float]] = Counter()
     calls: dict[int, int] = {}
     records: list[dict[str, object]] = []
     previous = 0
@@ -158,7 +192,14 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float) -> None:
         struct.pack_into("<Q", pc_copy, 8 + 0x3E8, producer_entry)
         struct.pack_into("<Q", pc_copy, 8 + 0x460, animation_entry)
         write(page + 0x300, bytes(pc_copy))
-        write(producer_entry, producer_shim(production, setter))
+        channel_copy = bytearray(reader.read(channel_vptr - 8, 0x1F0))
+        struct.pack_into("<Q", channel_copy, 8 + 0x30, rate_entry)
+        write(page + 0xD00, bytes(channel_copy))
+        write(rate_entry, rate_shim(rate_log, rate_target))
+        production_code = production_builder(production, setter)
+        if len(production_code) > 0x200:
+            raise ValueError("Production shim exceeds its private code slot")
+        write(producer_entry, production_code)
         write(animation_entry, animation_shim(animation, animation_target))
         code = shim(log, original, pc, production, animation)
         write(entry, code)
@@ -168,6 +209,7 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float) -> None:
             raise ValueError("Player identity changed before installation")
         write(kcc, struct.pack("<Q", table))
         write(pc, struct.pack("<Q", pc_table))
+        write(channel, struct.pack("<Q", channel_table))
         print(json.dumps({"status": "logging", "kcc": hex(kcc), "seconds": seconds}), flush=True)
         start = time.monotonic()
         while time.monotonic() - start < seconds:
@@ -190,6 +232,7 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float) -> None:
                                 "F8A6": record[64], "F8AD": record[72],
                                 "selector_state": list(record[56:64]),
                                 "dt": dt, "reciprocal": reciprocal,
+                                "world": struct.unpack("<4f", reader.read(ghost + 0x40, 16)),
                                 "wrapper_caller_rva": hex(outer - BASE),
                                 "wrapper_dt": struct.unpack_from("<f", record, 96)[0],
                                 "wrapper": hex(struct.unpack_from("<Q", record, 104)[0]),
@@ -226,14 +269,48 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float) -> None:
                                 and struct.unpack_from("<Q", record, 272)[0] == struct.unpack_from("<Q", record, 344)[0]
                                 and not struct.unpack_from("<Q", record, 272)[0] % 2})
                 previous = sequence
+                rate_record = reader.read(rate_log, 48)
+                rate_sequence, rate_caller, rate_thread, rate_instance = struct.unpack_from("<4Q", rate_record)
+                if rate_sequence and not rate_sequence % 2 and rate_sequence == struct.unpack("<Q", reader.read(rate_log, 8))[0]:
+                    if rate_instance != channel:
+                        raise ValueError("Rate shim logged another animation channel")
+                    returned = struct.unpack_from("<f", rate_record, 32)[0]
+                    field_rate = struct.unpack_from("<f", rate_record, 40)[0]
+                    rate_events[(rate_caller - BASE, rate_thread, field_rate, returned)] += 1
             time.sleep(0.01)
         moving = [r for r in records if math.hypot(*r["vec"][:3]) > 1e-5]
         states = {(tuple(r["ring_latest_axes"]), r["F8A6"], r["F8AD"], r["speed"]) for r in moving}
         animation_events: dict[int, dict[str, object]] = {}
+        segments = []
+        for r in records:
+            if not any(r["ring_latest_axes"]):
+                continue
+            key = (tuple(r["ring_latest_axes"]), r["speed"], r["F8A6"], r["F8AD"])
+            if not segments or key != segments[-1][0] or r["t"] - segments[-1][1][-1]["t"] > 0.2:
+                segments.append((key, []))
+            segments[-1][1].append(r)
+        world_segments = []
+        for key, rows in segments:
+            elapsed = rows[-1]["t"] - rows[0]["t"]
+            if elapsed < 1:
+                continue
+            distance = math.hypot(rows[-1]["world"][0] - rows[0]["world"][0], rows[-1]["world"][2] - rows[0]["world"][2])
+            path = sum(math.hypot(b["world"][0] - a["world"][0], b["world"][2] - a["world"][2]) for a, b in zip(rows, rows[1:]))
+            world_segments.append({"state": key, "elapsed": elapsed, "start": rows[0]["world"], "end": rows[-1]["world"],
+                                   "xz_distance": distance, "xz_speed": distance / elapsed, "xz_path_distance": path,
+                                   "xz_path_speed": path / elapsed, "height_range": max(r["world"][1] for r in rows) - min(r["world"][1] for r in rows),
+                                   "median_dt": statistics.median(r["dt"] for r in rows),
+                                   "median_step": statistics.median(r["step"] for r in rows),
+                                   "median_kcc_per_dt": statistics.median(math.hypot(r["vec"][0], r["vec"][2]) / r["dt"] for r in rows if r["dt"] > 0)})
         for r in records:
             if r["animation_sequence"] and r["animation_copy_stable"]:
                 animation_events.setdefault(r["animation_sequence"], r)
         print(json.dumps({"calls_observed": {hex(k): v for k, v in calls.items()},
+                          "world_position_source": "Bullet ghost +0x40; poll after submission log, non-atomic",
+                          "world_segments": world_segments,
+                          "downstream_rate_events": [{"caller_rva": hex(key[0]), "thread": key[1],
+                                                      "channel_rate": key[2], "returned_rate": key[3],
+                                                      "samples": count} for key, count in rate_events.items()],
                           "submission_count": previous // 2, "records": records[:5],
                           "animation_events": [{key: r[key] for key in
                                                 ("t", "animation_sequence", "animation_caller_rva",
@@ -249,14 +326,20 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float) -> None:
                 write(pc, struct.pack("<Q", pc_vptr))
         finally:
             try:
-                if struct.unpack("<Q", reader.read(kcc, 8))[0] == table:
-                    write(kcc, struct.pack("<Q", original_vptr))
+                if struct.unpack("<Q", reader.read(channel, 8))[0] == channel_table:
+                    write(channel, struct.pack("<Q", channel_vptr))
             finally:
-                api.CloseHandle(handle)
+                try:
+                    if struct.unpack("<Q", reader.read(kcc, 8))[0] == table:
+                        write(kcc, struct.pack("<Q", original_vptr))
+                finally:
+                    api.CloseHandle(handle)
         if struct.unpack("<Q", reader.read(kcc, 8))[0] != original_vptr:
             raise RuntimeError("KCC vptr restoration failed or another tool changed it")
         if struct.unpack("<Q", reader.read(pc, 8))[0] != pc_vptr:
             raise RuntimeError("Player vptr restoration failed or another tool changed it")
+        if struct.unpack("<Q", reader.read(channel, 8))[0] != channel_vptr:
+            raise RuntimeError("Animation channel vptr restoration failed")
         print(json.dumps({"status": "restored", "private_page": hex(page)}), flush=True)
         # ponytail: retain 8 KiB until process exit; free only after a proven quiescence protocol.
 
@@ -275,6 +358,10 @@ def main() -> None:
         animation = animation_shim(0x12341B00, BASE + 0x1DDC10)
         assert sum(i.size for i in capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64).disasm(animation[:-8], 0)) == len(animation) - 8
         assert len(code) < 0x400 and len(producer) < 0x200 and len(animation) < 0x200
+        rate = rate_shim(0x12341E00, BASE + 0x6C6C80)
+        rate_instructions = list(capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64).disasm(rate, 0))
+        assert sum(i.size for i in rate_instructions) == len(rate) and len(rate) < 0x200
+        assert rate_instructions[-1].mnemonic == "ret"
         print("self-check passed")
         return
     parser = argparse.ArgumentParser(description=__doc__)
@@ -286,7 +373,7 @@ def main() -> None:
         parser.error("seconds must be finite and within 0..60")
     reader = ProcessReader(args.pid)
     try:
-        trace(reader, args.pid, args.pc, args.seconds)
+        trace(reader, args.pid, args.pc, args.seconds, producer_shim)
     finally:
         reader.close()
 

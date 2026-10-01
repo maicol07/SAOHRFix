@@ -22,8 +22,13 @@ Virtual Xbox input works through Steam with the existing ViGEmBus; use
 Its percentages are not the internal axis values: measure consumed input.
 `analog_probe.py` polls bounded read intervals, never atomic frames.
 `walk_trace.py` is explicitly authorized temporary diagnostic instrumentation:
-player/KCC instance vtables only, original calls preserved, restoration required.
+player/KCC/animation-channel instance vtables only, original calls preserved,
+restoration required. `run_perturb.py` is an authorized diagnostic only; not
+live-tested. `fps_limit.py` temporarily changes an existing NVIDIA app profile,
+restores its original setting on exit, and requires game restart for cap changes.
 Its sequential records and cross-thread production copies are not atomic frames.
 Speed threshold and physical submission callers are identified; FPS 30/60/120,
 complete animation behavior and town/combat remain blockers. Sprint is NOT READY.
+Runtime clamps are 0/60; actual world position is Bullet ghost+40. Downstream
+animation rate getter 6C6C80 -> 2888CC -> channel+1D0 -> 56E530 identified.
 Run each new tool's `self-check` before live use; never install drivers implicitly.
