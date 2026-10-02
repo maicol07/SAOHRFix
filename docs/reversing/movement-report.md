@@ -957,3 +957,161 @@ Running. Nessun driver installato, EXE/CPK modificato o capture grezzo incluso.
 Self-check run perturbation, walk trace, runtime reader, virtual pad e FPS limiter
 passati; compilazione Python e `git diff --check` passati. Commit separato dei
 soli quattro file di tool/documentazione, sulla branch corrente `master`.
+
+## TRACE-246-01 — static trigger and diagnostic preparation, 2026-10-02
+
+Questa sezione aggiorna il gate. **NOT READY**: manca ancora il confronto runtime
+del medesimo trigger vanilla e **1.25 movement / 1.25 animation** nella lane
+definita sopra. Due catture vanilla nella zona attuale verificano la strumentazione
+e i campi idle/walk/run; non sono ripetizioni della lane storica.
+
+### Exact branch conditions
+
+**CONFIRMED static:** unwind chaining risolve il parent di `1F6045–1F6296` in
+**1F5B30**. RDI è il player, R12D=0, R14=`player+9E10`, XMM9=0.
+La funzione salva tre registri e riserva `150h` bytes. Il return del parent,
+all'ingresso del setter, è a **entry RSP+170h**; il vecchio offset del normale
+caller 206660 NON è valido qui. Il nuovo logger non interpreta quel vecchio
+offset fuori dal return 1E993F.
+
+Il percorso fino a `1F6219 / 1F6254` richiede:
+
+1. `field_A021=0`, virtual `+530(2)` vero e mask `0x04` di `field_A047` assente,
+   per superare l'entry gate. A021 nonzero usa un altro percorso e non arriva qui.
+2. `field_A025 != 0` al controllo `1F5F00`.
+3. Il risultato Y della query, in XMM11, è **maggiore** di
+   `requested_world.Y + xmm2` al confronto `1F603B`. XMM2 deriva dal calcolo
+   verticale `1F6001–1F6026`, con aggiornamento di `field_9F58`.
+4. `field_A025 != 0` e `field_9F58 < 0`, controlli `1F6060 / 1F606D`.
+5. `field_9FDC * π / 180 > xmm11` al confronto `1F61C4`; qui XMM11 è già
+   stato sostituito dal risultato della funzione matematica `1ADC40`.
+6. `field_9FF8 < 600`, controllo `1F61D6`.
+
+**HIGH CONFIDENCE static:** `1ADC40` calcola l'angolo con argomenti
+`normal.Y` e `sqrt(normal.X²+normal.Z²)`; il confronto è quindi un limite
+angolare derivato dalla normale della superficie. Non chiamare questo valore
+direttamente inclinazione del terreno senza distinguere l'angolo complementare.
+Se XZ della normale è zero il ramo lascia XMM11=1: caso distinto da atan2.
+
+Prima della call, `requested_world.Y` viene portato all'altezza della query
+(`1F60C6`). `1AD750` normalizza la componente XZ della normale; il target
+passato al setter aggiunge `0.5 * (1-normal.Y)` lungo tale direzione.
+Il parametro XMM2 è separatamente **0.5 originale**, caricato a `1F6219`.
+Il movimento verticale è quindi richiesto dal gameplay prima di Bullet;
+questo ramo non è l'implementazione dello step-up KCC `72AE80`.
+I valori KCC +44=0.035/+48=0.02 non sono il limite del target gameplay.
+
+### Fields, writers and query
+
+| Field | Writer statici identificati | Reader pertinenti | Runtime nuovo |
+|---|---|---|---|
+| `field_A025` | 1F4237=1, 1F43A7=1; 1E1F10=0; 20E4F7=0; 22804E/248BD9 copiano bit 0 di un descrittore +14 | 1F5F00, 1F5F40, 1F6060; getter 1E7530 | idle/walk/run: 0; prima/durante/dopo trigger: UNKNOWN |
+| `field_9FDC` | costruttore 1DA691=50.0; 23A923=-15.0 su una classe con altro vtable, non prova di un writer player live | 1E0D30, 1F61AC | idle/walk/run: 50.0; al trigger: UNKNOWN |
+| `field_9FF8` | costruttore 1DA676=0; reset 1F5EEC/1F62FC/1F6619/1F6642; incremento 1F6273 | 1F61D6, 1F626B | idle/walk/run: 0; al trigger: UNKNOWN |
+
+Questi sono riferimenti diretti identificati, non un inventario di ogni possibile
+scrittura indiretta/bulk. Nomi semantici dei campi volutamente non assegnati.
+`69B4C0` restituisce A63240 oppure A63248 moltiplicato per una costante secondo
+C82FAC. `field_9FF8` accumula questo valore; **600 non è dichiarato in secondi**.
+
+**CONFIRMED static:** `31EE00` viene chiamata a `1F5CC0` e, se fallisce, a
+`1F5D2D` dopo una piccola perturbazione XZ di 0.001. Le due estremità della
+query hanno lo stesso XZ: Y iniziale = posizione richiesta Y + max(9FC8,1.2),
+Y finale = posizione richiesta Y - 1000. La call `6CB920` riceve gli endpoint;
+il risultato restituisce Y da +60 e normale da +80 nello stack della query.
+Questi vengono copiati nello stack della locomotion, rispettivamente +50 e
+RBP-80. **HIGH CONFIDENCE:** query verticale della superficie, non un test
+orizzontale di ostacolo superabile. Se entrambe le query falliscono, esistono
+fallback e `field_A04C=2`; il logger lo conserva senza inventare una semantica.
+
+### Why request 246 follows the branch
+
+**CONFIRMED static:** dopo il setter return `1F625A`, la call `1F6260` invoca
+virtual **+428 = 20D0C0**. Questo chiama `1F4230`, poi `2C4450` con
+`player+A9B8`. Quando `1E59D0` restituisce zero, `2C449E` seleziona stato **4**
+tramite virtual +4F0=207AD0 → 1E4840. La tabella dello stato 4 contiene
+`206,246,952,956,960,964`; il predicato virtual +448 seleziona 206 oppure 246.
+La call **2C44DC → 1DDD70 → player+460** emette la request, con return
+**2C44E1** osservabile dal logger. Segue una transizione tramite 169210.
+
+Il predicato +448=1E7F30 è vero quando `field_A01E != 0` e +438=20AD60 è
+falso. Nel percorso A03C=0, +438 legge A01E e, se presente, restituisce
+`F8A6==0`; con A01E nonzero e F8A6=1 seleziona quindi **246**.
+A03C nonzero usa invece 1E7970, confronto di +9F24 con una costante.
+Nessun nome definitivo vault/jump/climb è dedotto dal numero dell'animazione.
+
+**CONFIRMED static:** il ramo speciale chiama direttamente il percorso che può
+emettere 246 **dopo** la call al setter, nello stesso update. Non è soltanto una
+correlazione tra due numeri. +428 è chiamato anche da altri rami, fra cui
+1F65E0 e 1F6613: clip 246 da solo non identifica univocamente 1F625A.
+L'ordine effettivamente osservato e il caso di transizione differita restano
+da verificare col trace runtime.
+
+### Diagnostic contract and current limitation
+
+`walk_trace.py` aggiunge un secondo shim in una pagina privata di **12 KiB**,
+raggiunto tramite il tail jump del logger esistente. Solo il return **1F625A**
+produce il record mirato. Salva parent caller, player, A025/9FDC/9FF8/9F58,
+XMM2, XMM11 angolare, altezza e normale della query, requested world al setter.
+Il polling associa tempo monotonic osservato, input consumato, F8/context,
+request recente, clip, player/ghost/target/requested XYZ e KCC displacement.
+A021/A01E/A03C/A04C sono aggiunti ai campioni ordinari per confrontare gli stati.
+
+Il callsite/predecessore riportato è **ricostruito staticamente**, non una
+registrazione dell'instruction stream. Il timestamp è al polling, non al momento
+CPU della call. Snapshot di shim, copia KCC e campi letti dal processo non sono
+una singola transazione atomica; il logger condiviso conserva il limite di
+concorrenza già documentato. Contatore delle call speciali e campioni osservati
+sono separati: il polling può perdere call. Flag, registri scratch e argomenti
+originali vengono preservati; nessuna patch di 1F6219, clamp Y o soppressione.
+
+**CONFIRMED verifica offline:** self-check e decodifica completa Capstone degli
+shim, limite degli slot e target del ramo di esclusione passano. Il tail jump
+attraverso il nuovo shim è **live-tested sul percorso di esclusione**; il corpo
+che cattura 1F625A non è ancora stato eseguito live. Il pairing 1.25/1.25 resta quello precedente;
+nessuna nuova calibrazione né default di release.
+
+Computer Use non ha aperto SKIF (`accessibility window-opened handler did not
+become ready`). Il comando nativo documentato `SKIF.exe Stop` ha poi fermato
+entrambi i servizi 32/64 senza intervento dell'utente; mod locali disabilitate
+con `mods.ps1 off`, cap driver 30 e lancio tramite Steam.
+Fonte per Stop/Start: [SKIF command-line arguments](https://github.com/SpecialKO/SKIF#command-line-arguments).
+
+**CONFIRMED runtime, smoke della strumentazione:** il salvataggio attuale carica
+**Foresta Grilim**, regione **Foresta di Oldrobe**. Ghost iniziale circa
+(-619.990,21.167,-383.600), diverso dal setup storico. I file ignorati
+`.cache/trace246-grimm-state-baseline.jsonl` (nome iniziale provvisorio, 30 s)
+e `.cache/trace246-grilim-run-baseline.jsonl` (20 s) contengono rispettivamente
+450 e 300 campioni di polling. Primo: 387 clip 0 e 63 clip 100; secondo:
+253 clip 0, 2 clip 100 e 45 clip 122. Nei campioni A025=0, 9FDC=50,
+9FF8=0 e 9F58=0; nessuna call speciale. La seconda cattura include un impulso
+virtuale (0,1), 3 s, buttons=0, multiplier 1.00. Entrambe riportano `restored`.
+Questi campioni non misurano la frequenza del trigger sulla lane storica.
+
+**UNKNOWN riproducibilità della lane:** il report precedente conserva XYZ,
+input/durata e gate, ma non il nome/ID della zona. Le coordinate locali non
+identificano una geometria tra aree differenti. La mappa corrente è stata
+ispezionata tramite Computer Use; nessun viaggio verso una zona ipotizzata,
+nessun confronto 1.25 su una geometria diversa. È stato richiesto il solo nome
+della zona storica, senza richiedere guida o input manuale.
+
+**Decisione: NOT READY. Unico blocker:** catturare e confrontare la firma del
+trigger geometrico 1F625A/246, vanilla e 1.25/1.25, nella lane già definita;
+la relazione statica è identificata, l'equivalenza runtime non è dimostrata.
+Prossimo passo preciso: identificare la zona della lane storica, tornarvi tramite
+viaggio rapido e applicare il trace già pronto alle ripetizioni 1.00 e 1.25/1.25.
+La classificazione A/B/C/D/E resta UNKNOWN. Sanity subordinato non eseguito;
+nessuna Sprint implementation o altra fase avviata.
+
+**CONFIRMED cleanup di questa sessione:** dopo le catture, verifica read-only dei
+vptr player **14080AE08**, KCC **140879BD0**, channel **140822AE8**. Gioco chiuso
+e pagine diagnostiche terminate col processo. Pad terminato tramite il finally
+di `virtual_pad.py`, reset/update e disconnect; limiter terminato con
+`restored, fps:null`, rimuovendo il cap temporaneo 30. Mod locali **attive**
+(d3d11.dll e SAO HR Ultrawide.asi) e servizi Special K 32/64 attivi, come
+all'inizio. Il controllo ha individuato un errore di precedenza nell'espressione
+`-replace` di `mods.ps1 on`: parentesi aggiunte al pattern concatenato;
+ripristino dei due nomi e stato active/disabled verificati dopo la correzione.
+Nessun EXE/CPK scritto, driver installato o capture grezzo incluso nel commit.
+Self-check walk trace, run perturbation, runtime reader, virtual pad e FPS
+limiter, py_compile e `git diff --check` passati.

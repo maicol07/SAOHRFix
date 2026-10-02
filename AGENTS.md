@@ -36,8 +36,16 @@ nearby vanilla comparison; matched geometry/trajectory remains unverified.
 Current controlled wall captures: 1.25 has four stable runs; one of three
 effective 1.10 runs ascends through original caller 1F625A, parameter 0.5,
 clip 246 and an already-positive requested Y. Its trigger remains unresolved;
-the historical +12 Y event is not fully reproduced. Stop further perturbations
-until the 246/1F625A wall trigger is isolated; no Sprint implementation yet.
+the historical +12 Y event is not fully reproduced. Static parent 1F5B30 compares
+query height/normal, A025, negative 9F58, 9FDC*pi/180 and 9FF8<600;
+1F625A calls +428 -> 20D0C0 -> 2C4450, selecting state 4 request 206/246.
+TRACE-246-01 shim is self-checked; its rejection path is live-tested, trigger
+body is not. Idle/walk/run smoke fields: A025=0, 9FDC=50, 9FF8=0.
+Matched vanilla versus
+1.25/1.25 trigger comparison remains the blocker; no Sprint implementation yet.
+SKIF native Stop/Start resolved its inaccessible UI on 2026-10-02. Current save
+is Foresta Grilim; historical lane lacks area name/ID. Resolve it before matched
+tests; do not reuse local XYZ in another area. mods.ps1 on suffix regex corrected.
 Animation return perturbation is player-channel-only, clip 122 only; factor
 1.25 best matches baseline distance/phase, but direct foot sliding is unmeasured.
 Selector 1 / parameter 0.109005 / clip 100122 is outside the verified FF/FE

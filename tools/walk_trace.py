@@ -2,7 +2,7 @@
 
 Usage: walk_trace.py PID CChrPc-VA seconds
 Copies three instance vtables, logs entries, calls the originals.
-Restores all instance vptrs in finally. The private 8 KiB page stays until game exit:
+Restores all instance vptrs in finally. The private 12 KiB page stays until game exit:
 freeing executable memory while a thread may still return through it is unsafe.
 This is diagnostic instrumentation, not an unmodified vanilla capture.
 """
@@ -57,6 +57,29 @@ def producer_shim(log: int, original: int) -> bytes:
         code += bytes.fromhex(source + " 49 89 42") + bytes([destination])
     code += bytes.fromhex("49 FF 02 41 5B 41 5A 58 9D FF 25 00 00 00 00")
     code += struct.pack("<Q", original)
+    return bytes(code)
+
+
+def special_shim(log: int, original: int) -> bytes:
+    # TRACE-246-01: only the setter return 1F625A, after the original branch tests.
+    # 1F5B30 pushes 3 registers and reserves 150h; parent return is entry RSP+170h.
+    code = bytearray.fromhex("9C 50 41 52 49 BA") + struct.pack("<Q", BASE + 0x1F625A)
+    code += bytes.fromhex("4C 39 54 24 18 0F 85 00 00 00 00")
+    reject = len(code) - 4
+    code += bytes.fromhex("49 BA") + struct.pack("<Q", log)
+    code += bytes.fromhex("49 FF 02")
+    for source, destination in (("48 8B 84 24 88 01 00 00", 8),
+                                ("48 89 C8", 16), ("0F B6 81 25 A0 00 00", 24),
+                                ("8B 81 DC 9F 00 00", 32), ("8B 81 F8 9F 00 00", 40),
+                                ("8B 81 58 9F 00 00", 48), ("66 0F 7E D0", 56),
+                                ("66 44 0F 7E D8", 64), ("8B 44 24 70", 72),
+                                ("48 8B 45 80", 80), ("48 8B 45 88", 88),
+                                ("48 8B 81 10 9E 00 00", 96),
+                                ("48 8B 81 18 9E 00 00", 104)):
+        code += bytes.fromhex(source + " 49 89 42") + bytes([destination])
+    code += bytes.fromhex("49 FF 02")
+    struct.pack_into("<i", code, reject, len(code) - reject - 4)
+    code += bytes.fromhex("41 5A 58 9D FF 25 00 00 00 00") + struct.pack("<Q", original)
     return bytes(code)
 
 
@@ -180,7 +203,7 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
     handle = api.OpenProcess(0x438, False, pid)
     if not handle:
         raise ct.WinError(ct.get_last_error())
-    page = api.VirtualAllocEx(handle, None, 8192, 0x3000, 0x40)
+    page = api.VirtualAllocEx(handle, None, 12288, 0x3000, 0x40)
     if not page:
         api.CloseHandle(handle)
         raise ct.WinError(ct.get_last_error())
@@ -195,6 +218,9 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
     pc_table, producer_entry, production = page + 0x308, page + 0x1400, page + 0x1A00
     animation_entry, animation = page + 0x1600, page + 0x1B00
     channel_table, rate_entry, rate_log = page + 0xD08, page + 0x1C00, page + 0x1E00
+    special_entry, special_log = page + 0x2000, page + 0x2400
+    special_events: list[dict[str, object]] = []
+    previous_special = 0
     rate_events: Counter[tuple[int, int, float, float]] = Counter()
     calls: dict[int, int] = {}
     records: list[dict[str, object]] = []
@@ -215,14 +241,15 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
             raise ValueError("Rate diagnostic exceeds its code slot")
         write(rate_entry, rate_code)
         write(rate_log + 0x100, b"\x01")
-        production_code = production_builder(production, setter)
+        write(special_entry, special_shim(special_log, setter))
+        production_code = production_builder(production, special_entry)
         if len(production_code) > 0x200:
             raise ValueError("Production shim exceeds its private code slot")
         write(producer_entry, production_code)
         write(animation_entry, animation_shim(animation, animation_target))
         code = shim(log, original, pc, production, animation)
         write(entry, code)
-        if not api.FlushInstructionCache(handle, page, 8192):
+        if not api.FlushInstructionCache(handle, page, 12288):
             raise ct.WinError(ct.get_last_error())
         if resolve(reader, pc) != identity:
             raise ValueError("Player identity changed before installation")
@@ -260,6 +287,15 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
                                 "world": struct.unpack("<4f", reader.read(ghost + 0x40, 16)),
                                 "player_world": struct.unpack("<4f", reader.read(pc + 0x9DE0, 16)),
                                 "target_world": struct.unpack("<4f", reader.read(pc + 0x9E20, 16)),
+                                "requested_world": struct.unpack("<4f", reader.read(pc + 0x9E10, 16)),
+                                "field_A025": reader.read(pc + 0xA025, 1)[0],
+                                "field_A021": reader.read(pc + 0xA021, 1)[0],
+                                "field_A01E": reader.read(pc + 0xA01E, 1)[0],
+                                "field_A04C": reader.read(pc + 0xA04C, 1)[0],
+                                "field_A03C": reader.read(pc + 0xA03C, 1)[0],
+                                "field_9FDC": struct.unpack("<f", reader.read(pc + 0x9FDC, 4))[0],
+                                "field_9FF8": struct.unpack("<f", reader.read(pc + 0x9FF8, 4))[0],
+                                "field_9F58": struct.unpack("<f", reader.read(pc + 0x9F58, 4))[0],
                                 "kcc_ground_fields": struct.unpack("<2f", reader.read(kcc + 0x20, 8)),
                                 "kcc_step_fields": struct.unpack("<3f", reader.read(kcc + 0x40, 12)),
                                 "kcc_contact_flags": list(reader.read(kcc + 0xE0, 4)),
@@ -283,7 +319,9 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
                                 "production_x_register": struct.unpack_from("<I", record, 200)[0],
                                 "production_magnitude_register": struct.unpack_from("<I", record, 208)[0],
                                 "production_speed": struct.unpack_from("<f", record, 216)[0],
-                                "production_outer_rva": hex(struct.unpack_from("<Q", record, 224)[0] - BASE),
+                                "production_outer_rva": (hex(struct.unpack_from("<Q", record, 224)[0] - BASE)
+                                                         if struct.unpack_from("<Q", record, 176)[0] == BASE + 0x1E993F
+                                                         else None),
                                 "production_F8A6": record[232], "production_F8AD": record[240],
                                 "production_selector_state": record[248],
                                 "production_selector_pending": record[256],
@@ -303,6 +341,28 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
                                 and struct.unpack_from("<Q", record, 272)[0] == struct.unpack_from("<Q", record, 344)[0]
                                 and not struct.unpack_from("<Q", record, 272)[0] % 2})
                 previous = sequence
+                special = reader.read(special_log, 112)
+                special_sequence = struct.unpack_from("<Q", special)[0]
+                if (special_sequence and not special_sequence % 2
+                        and special_sequence != previous_special
+                        and special_sequence == struct.unpack("<Q", reader.read(special_log, 8))[0]):
+                    special_events.append({"observed_monotonic_s": time.monotonic(),
+                                           "sequence": special_sequence,
+                                           "parent_caller_rva": hex(struct.unpack_from("<Q", special, 8)[0] - BASE),
+                                           "pc": hex(struct.unpack_from("<Q", special, 16)[0]),
+                                           "setter_return_rva": "0x1f625a",
+                                           "static_callsite_rva": "0x1f6254",
+                                           "field_A025": special[24],
+                                           "field_9FDC": struct.unpack_from("<f", special, 32)[0],
+                                           "field_9FF8": struct.unpack_from("<f", special, 40)[0],
+                                           "field_9F58": struct.unpack_from("<f", special, 48)[0],
+                                           "parameter": struct.unpack_from("<f", special, 56)[0],
+                                           "branch_angle_radians": struct.unpack_from("<f", special, 64)[0],
+                                           "query_height": struct.unpack_from("<f", special, 72)[0],
+                                           "query_normal": struct.unpack_from("<4f", special, 80),
+                                           "requested_world_at_setter": struct.unpack_from("<4f", special, 96),
+                                           "poll_context": records[-1] if records else None})
+                    previous_special = special_sequence
                 rate_record = reader.read(rate_log, 48)
                 rate_sequence, rate_caller, rate_thread, rate_instance = struct.unpack_from("<4Q", rate_record)
                 if rate_sequence and not rate_sequence % 2 and rate_sequence == struct.unpack("<Q", reader.read(rate_log, 8))[0]:
@@ -349,11 +409,17 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
                                       ("t", "sequence", "world", "player_world", "target_world", "vec",
                                        "speed", "dt", "ring_latest_axes", "kcc_ground_fields", "kcc_step_fields", "kcc_contact_flags",
                                        "active_clip_id", "animation_phase", "downstream_rate")}
+                                     | {key: row[key] for key in
+                                        ("requested_world", "field_A025", "field_A021", "field_A01E", "field_A04C", "field_A03C",
+                                         "field_9FDC", "field_9FF8", "field_9F58",
+                                         "production_caller_rva", "animation_request_id", "animation_caller_rva")}
                                      | {"delta_world": delta,
                                         "suspect_vertical": suspect_vertical(delta[1], row["world"][1], records[0]["world"][1]),
                                         "on_ground": all(value == 0.0 for value in row["kcc_ground_fields"])})
         print(json.dumps({"calls_observed": {hex(k): v for k, v in calls.items()},
                           "collision_samples": collision_samples,
+                          "special_events": special_events,
+                          "special_calls": previous_special // 2,
                           "world_position_source": "Bullet ghost +0x40; poll after submission log, non-atomic",
                           "world_segments": world_segments,
                           "downstream_rate_events": [{"caller_rva": hex(key[0]), "thread": key[1],
@@ -392,7 +458,7 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
         if struct.unpack("<Q", reader.read(channel, 8))[0] != channel_vptr:
             raise RuntimeError("Animation channel vptr restoration failed")
         print(json.dumps({"status": "restored", "private_page": hex(page)}), flush=True)
-        # ponytail: retain 8 KiB until process exit; free only after a proven quiescence protocol.
+        # ponytail: retain 12 KiB until process exit; free only after a proven quiescence protocol.
 
 
 def main() -> None:
@@ -412,6 +478,12 @@ def main() -> None:
         animation = animation_shim(0x12341B00, BASE + 0x1DDC10)
         assert sum(i.size for i in capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64).disasm(animation[:-8], 0)) == len(animation) - 8
         assert len(code) < 0x400 and len(producer) < 0x200 and len(animation) < 0x200
+        special = special_shim(0x12342400, BASE + 0x1E9980)
+        decoded = list(capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64).disasm(special[:-8], 0))
+        assert sum(i.size for i in decoded) == len(special) - 8 < 0x400
+        branch = next(i for i in decoded if i.mnemonic == "jne")
+        assert next(i for i in decoded if hex(i.address) == branch.op_str).mnemonic == "pop"
+        assert any(i.op_str.endswith("[rsp + 0x188]") for i in decoded)
         rate = rate_shim(0x12341E00, BASE + 0x6C6C80)
         rate_instructions = list(capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64).disasm(rate, 0))
         assert sum(i.size for i in rate_instructions) == len(rate) and len(rate) < 0x200

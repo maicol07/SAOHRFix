@@ -38,5 +38,5 @@ switch ($Action) {
         "disabled:"; Get-ModFiles $true  | ForEach-Object { "  $_" }
     }
     'off' { Get-ModFiles $false | ForEach-Object { Rename-Item -LiteralPath $_ -NewName ((Split-Path $_ -Leaf) + $Suffix); "off: $_" } }
-    'on'  { Get-ModFiles $true  | ForEach-Object { Rename-Item -LiteralPath $_ -NewName ((Split-Path $_ -Leaf) -replace [regex]::Escape($Suffix) + '$', ''); "on:  $_" } }
+    'on'  { Get-ModFiles $true  | ForEach-Object { Rename-Item -LiteralPath $_ -NewName ((Split-Path $_ -Leaf) -replace ([regex]::Escape($Suffix) + '$'), ''); "on:  $_" } }
 }
