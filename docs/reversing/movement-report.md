@@ -1115,3 +1115,39 @@ ripristino dei due nomi e stato active/disabled verificati dopo la correzione.
 Nessun EXE/CPK scritto, driver installato o capture grezzo incluso nel commit.
 Self-check walk trace, run perturbation, runtime reader, virtual pad e FPS
 limiter, py_compile e `git diff --check` passati.
+
+### TRACE-246-01 — zona identificata dall'utente, accesso ancora da verificare
+
+**CONFIRMED comunicazione dell'utente (2026-10-02):** la lane storica si trova
+in **Anticamera delle Grandi Pianure Rastoria**. Questa indicazione supera il
+precedente passo di ricerca del nome della zona. Setup da recuperare: ghost
+circa **(-7.67, 1.40, 131.39)**, pad **(-0.5, 0.8660254)**, buttons=0,
+impulso **4.0 s**, camera non manovrata, direzione world circa -X con piccola +Z.
+
+**CONFIRMED runtime, sola navigazione:** avvio vanilla tramite Steam, mod locali
+disabilitate, servizi Special K fermati e cap temporaneo 30. Computer Use e pad
+virtuale hanno consentito viaggio in Piazza del teletrasporto, selezione di
+**Poggio Phoeniath** nella mappa Rustoria e successivo ritorno in piazza.
+Il nome Poggio Phoeniath e la posizione sulla mappa sono stati verificati nella
+UI; non dimostrano accesso all'Anticamera. I nodi ispezionati non hanno mostrato
+quel nome. Una porta nella piazza è risultata inaccessibile, senza cambio area.
+Questo non esclude altri ingressi o collegamenti. È stato richiesto il solo
+percorso di accesso, senza richiedere movimento manuale per le prove.
+
+**UNKNOWN:** accesso e verifica visiva/XYZ della lane. In questa ripresa non sono
+stati installati hook né eseguite nuove catture comparative: nessuna evidenza
+aggiuntiva sul trigger `1F625A/246`, nessuna classificazione causale e nessun
+sanity subordinato. La navigazione non conta come test collisione.
+
+**Decisione invariata: NOT READY. Unico blocker:** confronto runtime del trigger
+`1F625A/246` sulla lane storica verificata, con ripetizioni vanilla 1.00/1.00 e
+1.25/1.25. Prossimo passo: verificare il collegamento all'Anticamera, raggiungere
+la lane col pad virtuale e applicare il trace esistente. Nessuna implementazione
+Sprint o altra fase avviata.
+
+**Cleanup:** gioco chiuso; nessun hook/vptr modificato durante questa ripresa.
+Pad terminato tramite il finally di `virtual_pad.py`; limiter terminato con
+`restored, fps:null`. Stato finale verificato: d3d11.dll e SAO HR Ultrawide.asi
+attivi, nessun file disabilitato, SKIFsvc32/SKIFsvc64 attivi e processo gioco
+assente. Self-check walk trace, run perturbation, virtual pad, FPS limiter e
+runtime reader passati; `git diff --check` passato. Nessun EXE/CPK modificato.

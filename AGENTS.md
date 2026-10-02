@@ -43,9 +43,11 @@ TRACE-246-01 shim is self-checked; its rejection path is live-tested, trigger
 body is not. Idle/walk/run smoke fields: A025=0, 9FDC=50, 9FF8=0.
 Matched vanilla versus
 1.25/1.25 trigger comparison remains the blocker; no Sprint implementation yet.
-SKIF native Stop/Start resolved its inaccessible UI on 2026-10-02. Current save
-is Foresta Grilim; historical lane lacks area name/ID. Resolve it before matched
-tests; do not reuse local XYZ in another area. mods.ps1 on suffix regex corrected.
+SKIF native Stop/Start resolved its inaccessible UI on 2026-10-02. The user
+identified the historical lane as Anticamera delle Grandi Pianure Rastoria.
+Its access route remains unverified in-game; navigation reached Poggio Phoeniath
+and returned to Piazza del teletrasporto, without matched captures. Verify the
+area and geometry before reusing historical XYZ. mods.ps1 on suffix regex corrected.
 Animation return perturbation is player-channel-only, clip 122 only; factor
 1.25 best matches baseline distance/phase, but direct foot sliding is unmeasured.
 Selector 1 / parameter 0.109005 / clip 100122 is outside the verified FF/FE
