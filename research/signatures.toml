@@ -283,3 +283,19 @@ module = "sao_hr.exe"
 rva = "0x20646A"
 signature = "45 0F AF FF 45 0F AF E4 45 03 FC 41 81 FF 00 31 00 00"
 description = "Consumed signed axes squared, sum compared against 0x3100 before timed F8A6 transition."
+
+[bullet_kcc_slope_projection]
+status = "build-local"
+confidence = "confirmed"
+module = "sao_hr.exe"
+rva = "0x72B3C0"
+signature = "48 8B C4 48 89 58 08 57 48 81 EC B0 00 00 00 0F 29 70 E8 0F 29 78 D8 44 0F 29 40 C8 48 8B FA"
+description = "Surface projection called by forward step before contact callback. Unique in verified build; unit-normal formula matched to synchronized runtime. Diagnostic address, not an approved Sprint hook."
+
+[bullet_kcc_native_slope_setter]
+status = "build-local"
+confidence = "confirmed"
+module = "sao_hr.exe"
+rva = "0x72A570"
+signature = "40 53 48 83 EC 20 0F 28 C1 F3 0F 11 49 34 48 8B D9 E8 12 06 FC FF F3 0F 11 43 38"
+description = "Stores slope angle and its cosf result in KCC+34/+38; unique in verified build."

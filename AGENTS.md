@@ -43,9 +43,19 @@ TRACE-246-01 shim rejection and trigger body are now live-tested. The original
 1F625A/246 path preserves parameter 0.5 and clip rate 1; Sprint excludes it.
 Anticamera captures also show large ascents through ordinary 1E993F/122,
 A025=0 and no special calls, at 1.10/1.15/1.25; five vanilla controls stable.
-Three stable 1.20 captures do not prove a safe threshold. Ascent dY/-dX ~3.656
-matches query normal Nx/Ny. COLLISION-SLOPE-01, ordinary vertical correction at
-contact, is the sole next blocker; no Sprint implementation yet.
+Three stable 1.20 captures do not prove a safe threshold. COLLISION-SLOPE-01
+synchronized trace localizes forward projection 72B3C0 -> target Y 72B5EA;
+v-dot(v,n)*n matches a negative requested Y becoming positive actual dY.
+Movement-only 1.15 reaches Y=14.218; preStep recovery is unchanged during high
+ascents. Experimental post-contact suppression latches and restores vanilla
+speed/rate, but still reaches Y=4.656: not a validated safety mechanism.
+COLLISION-SLOPE-02 native threshold is KCC+38 = cos(KCC+34), not +9FDC;
+closest callback 729DA5 rejects threshold > dot(up, normal).
+Pre-projection 72ACC8 deboost/latch passes three 1.15 trials but one of two
+1.25 trials reaches Y=12.982. First bad seq481 has positive requested Y,
+no new forward hit, latch off, +C0=1 and cached +D0 matching recovery 72AB3C.
+The sole next blocker is covering cached recovery and preserving vanilla
+before positive-Y production. Stop after failure; no Sprint implementation yet.
 SKIF native Stop/Start resolved its inaccessible UI on 2026-10-02. The user
 identified the historical lane as Anticamera delle Grandi Pianure Rastoria.
 Direct teleport to Anticamera is verified from the Rustoria regional map;

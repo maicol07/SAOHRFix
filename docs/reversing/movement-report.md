@@ -3,8 +3,9 @@
 **Aggiornamento:** le sezioni fino a “Baseline readiness” conservano il report
 manuale del commit `ddca350`. Le conclusioni correnti, che sostituiscono le sue
 incertezze e lo stato finale storico, iniziano da “Analog input path”.
-La decisione finale corrente è in **“Current validation — 2026-10-01”**:
-**NOT READY**, dopo prove live del moltiplicatore e confronto FPS.
+La decisione finale corrente è in **“COLLISION-SLOPE-02 — 2026-10-09”**:
+**NOT READY**. Anche il deboost prima del nuovo hit forward fallisce:
+un update di recovery con requested Y già positivo sfugge al filtro.
 
 Data: 1 ottobre 2026. Build Steam PC, SHA-256
 `1923f0d8d2cad559d6ad6e001af54ea5ea5aa70171323f42d4e1fa3d63699e43`.
@@ -1297,3 +1298,320 @@ d3d11.dll e SAO HR Ultrawide.asi attivi, nessun file disabilitato,
 SKIFsvc32/SKIFsvc64 attivi come all'inizio. Nessuna patch EXE/CPK,
 installazione driver o capture grezzo versionato. Self-check run perturbation e
 walk trace, py_compile del tool modificato e `git diff --check` passati.
+
+### COLLISION-SLOPE-01 — 2026-10-09
+
+#### Synchronized KCC trace
+
+**CONFIRMED runtime:** `tools/slope_trace.py` registra sei snapshot nello
+stesso update del KCC del player: prima/dopo wrapper `58D340`, preStep
+`72A160` e playerStep `729EF0`. I callback della sola istanza, slot +60
+`5875A0`, condividono sequence/thread con l'update. Originali e argomenti
+preservati; nessuna scrittura a ghost, richiesta Y, step height o collisioni.
+Campi: ghost/current/target, richiesta +50, direzione +60, stato +20..4F,
+C0..CF, normale D0, E0..EF, normale/punto del contatto e current/target prima
+e dopo callback. Schema 2 aggiunge hit fraction del caller forward `72ADDB`
+e stato del latch diagnostico prima/dopo update.
+
+La ring è limitata a 4096 update e sette callback/update; pubblicazione a
+fine update, conflitti di contesto e overflow invalidano la cattura. I poll
+player/query/animation restano sequenziali, non atomici con questi snapshot.
+Sequence identifica un update, non un frame video; tempo monotonic disponibile
+nei poll e nei log del pad, non in ogni snapshot. Osservati due update KCC
+per submission, con E3 alternato: non contarli come due frame indipendenti.
+
+#### Separazione movement / animation
+
+Anticamera, camera non manovrata nella serie, input virtuale
+`(-0.5,0.8660254)`, buttons=0, impulso 4 s. Cap NVIDIA richiesto 30 prima
+del riavvio: questa nuova serie non aggiunge una misura FPS esterna.
+Poll dt ~0.0667 s e scalar wrapper ~0.0166667, coerenti con la serie storica.
+Reset tramite pad, non scritture di posizione: riportare gli start esatti,
+non assumere prove bit-identiche. Detector: ghost Y>2 nella lane bassa,
+oppure abs(deltaY)>0.10 per update; le normali piccole correzioni di contatto
+possono superare il secondo criterio, che da solo non prova regressione.
+
+| Move / animation | Capture locali | Start X (Z≈131.64, Y=1.40) | Max ghost Y | Risultato |
+|---|---|---|---|---|
+| 1.00 / 1.25, animation-only | `slope-30-A1..3` | -7.772, -7.814, -7.831 | 1.5950, 1.5952, 1.5950 | Nessuna grande ascesa |
+| 1.25 / 1.00, movement-only | `slope-30-B1..3` | -7.772, -7.790, -7.830 | 1.6466, 1.6410, 1.6417 | Nessuna grande ascesa |
+| 1.25 / 1.25, combined | `slope-30-C1..3` | -7.779, -7.803, -7.811 | 1.6412, 1.6411, 1.6414 | Nessuna grande ascesa |
+| 1.00 / 1.00, vanilla | `slope-30-D1..3` | -7.737, -7.778, -7.826 | 1.5956, 1.5947, 1.5945 | Nessuna grande ascesa; D1 Z=131.606 |
+| 1.15 / 1.15 | `slope-30-115-near-old` | -7.296160, Z=131.641861 | **5.3738** | Ascesa ordinaria riprodotta |
+| 1.15 / 1.00, movement-only | `slope-30-115-move-only-2` | -7.407774, Z=131.637878 | **14.2178** | Ascesa ordinaria riprodotta |
+
+Tutte queste catture: zero special calls, zero conflitti/overflow/callback
+overflow, ripristino registrato. Run speed effettivo 1.15=0.194783568;
+rate run 1.15 nel pairing e 1.0 nel movement-only. Le prove a cap 60
+`slope-A/B/C/D*` senza grande ascesa non sostituiscono quelle a cap 30.
+`slope-30-115-move-only-1` è esclusa: nessun impulso efficace.
+
+**CONFIRMED:** il playback accelerato non è necessario all'ascesa.
+**UNKNOWN:** animation-only non dimostrato innocuo per ogni start; tre prove
+stabili non danno tale garanzia. Anche 1.25 stabile in questa serie non annulla
+le precedenti ascese ordinarie a 1.10/1.15/1.25. Nessuna soglia sicura scelta.
+
+#### Collision normal relationship e primo delta Y
+
+**CONFIRMED static + runtime:** il forward step `72A9D0` chiama `72B3C0`
+dal callsite `72ACC8`, prima del callback `72ADDB`. La routine proietta
+il displacement sulla superficie. Con normale unitaria e fattore XMM3=1:
+
+`v_projected = v - dot(v, normal) * normal`
+
+L'implementazione normalizza/riflette il vettore, toglie la componente normale
+e riapplica la lunghezza. Non contiene una divisione esplicita per Ny.
+Target Y viene scritto in `72B5EA`; la componente proiettata Y è calcolata
+in `72B597`. Il rapporto osservato dY/-dX≈3.656 nasce dalla geometria della
+normale, non da un moltiplicatore verticale introdotto dal nostro hook.
+
+Record **337** di `slope-30-115-near-old`, nello stesso update:
+
+| Campo | Valore |
+|---|---|
+| Ghost prima | (-18.486170, **1.408951**, 131.503342) |
+| Richiesta KCC +50 | (-0.589489, **-0.000034981**, 0.003631592) |
+| Normale forward | (0.964566469,0.263840288,0.000127155) |
+| dot(v,n) | -0.568610190 |
+| Current al callback | (-18.486170, **1.443951**, 131.503342) |
+| Target al callback | (-18.527197, **1.593939**, 131.507050) |
+| Ghost dopo | (-18.527197, **1.558939**, 131.507050) |
+
+La formula ricostruisce il target entro l'arrotondamento float. La richiesta
+Y è negativa, ma il delta ghost finale è **+0.149987**. preStep non sposta
+il ghost; callback originale non cambia current/target. L'up step introduce
+0.035, poi il down step lo sottrae: il rialzo netto è già nel target proiettato.
+La pubblicazione del ghost è nel playerStep, `72A139`.
+
+**CONFIRMED:** nei due trace di grande ascesa, tutti gli update con Y>2 hanno
+delta ghost preStep zero; i callback non alterano current/target. Non è il
+penetration recovery del preStep a produrre questi rialzi. Non dedurre che
+non esista mai recovery o tunneling altrove: questo trace non misura ogni
+profondità di contatto e non dimostra attraversamento della mesh.
+
+Il movement-only mostra anche una seconda situazione: sequence **335** entra
+già con richiesta Y **+0.286139** e la proiezione porta il rialzo netto a
+**+0.375056**. Quindi il primo Y positivo non nasce sempre dentro Bullet.
+**PROBABLE:** feedback del target ordinario/terreno una volta raggiunta la
+lastra; writer upstream esatto non localizzato in questa sessione.
+Zero 246 in entrambe le catture: questo meccanismo è distinto dall'azione
+speciale già esclusa. Classificazione: **risposta originale KCC amplificata
+dal displacement Sprint**, con accesso alla superficie sensibile allo start;
+non una nuova patch verticale o una regressione dimostrata del playback.
+
+#### Fix candidate e validation
+
+Prova diagnostica `--suppress-on-contact`: al primo callback forward
+`72ADDB` con +9F24 pari al run perturbato, latch atomico player-only. I
+successivi getter movement/rate saltano i moltiplicatori; la risposta fisica
+originale rimane intatta. Reset previsto solo a richiesta KCC XYZ nulla.
+Il callback avviene **dopo** la proiezione: candidato conservativo, non fix
+approvato. Non installare questa logica come Sprint production.
+
+**CONFIRMED runtime, `slope-fallback-115-1`, 2026-10-09:** move/animation
+1.15/1.15, start **(-8.124241,1.400000,131.625809)**. È la stessa geometria,
+ma start X diverso dalle precedenti prove: non un confronto appaiato.
+Impulso pad 4 s; finestra trace 20 s copre circa i primi 3 s del movimento,
+non il rilascio completo. 600 update, nessun conflitto/overflow, restore riuscito.
+
+- Primo latch, sequence **541**: ghost Y **1.407321 → 1.716587**;
+  richiesta Y già **+0.209700**, normale (0.964572966,0.263816118,0.000127158),
+  hit fraction **0.104247**. preStep e callback non modificano le posizioni.
+- Stato latch: 540 update false/false, uno false/true, 59 true/true;
+  **52 update già soppressi con Y>2**, max Y **4.656038**, max deltaY **0.309267**.
+- Poll successivo al latch: +9F24 **0.169377014**, downstream rate **1.0**,
+  Y **1.818106**. Prima: speed **0.194783568**, getter run **1.15**.
+  Rate 2.0 resta quello originale del walk. Nessuna special call.
+
+**Esito: FAIL.** Il latch funziona, ma non elimina l'ascesa una volta iniziata.
+Non serve una seconda prova per respingere una garanzia di sicurezza già
+contraddetta. Il tentativo `slope-fallback-125-1` è escluso: guard FF/FE
+fallita prima dell'installazione, dopo variazione del contesto/input;
+nessun risultato multiplier valido. Reset del latch al rilascio e lifecycle
+non verificati live in questa prova troncata.
+
+#### Final readiness
+
+**NOT READY. Unico prossimo blocker:** verificare un filtro **prima della
+submission ordinaria ascendente** che sopprima entrambi i moltiplicatori
+sulla lastra, e dimostrare in confronti ripetuti che non consenta la risalita
+extra rispetto a vanilla. Il callback dopo la proiezione è troppo tardi;
+ridurre arbitrariamente a 1.20 non sostituisce la verifica.
+
+Causa fisica localizzata e movement-only positivo; resta la prevenzione.
+Sanity altre geometrie/town/combat/lifecycle rimane subordinato a questo gate,
+non è una lista di nuovi blocker. Calibrazione precedente distanza/fase
+conservata, foot sliding diretto non misurato. Nessun default o specifica
+implementativa di release approvata; Left Shift/L3, Hold/Toggle restano futuri.
+Nessuna implementazione Sprint, Audio o altre fasi.
+
+**CONFIRMED cleanup 2026-10-09:** vptr originali riverificati prima dell'uscita
+(player 14080AE08, KCC 140879BD0, channel 140822AE8); gioco poi assente,
+pagine private terminate. Pad uscito tramite finally, reset/disconnect;
+limiter uscito con `restored, fps:null`. d3d11.dll e SAO HR Ultrawide.asi
+attivi, nessun file disabilitato; SKIFsvc32/SKIFsvc64 nuovamente attivi.
+Nessuna patch EXE/CPK o nuovo driver. Capture locali esclusi da Git.
+
+Self-check `slope_trace`, `run_perturb`, `walk_trace`, py_compile dei tre tool,
+parse TOML e `git diff --check` passati. SHA-256 EXE invariata; firma corta
+`72B3C0` verificata al suo RVA e unica nel file della build.
+Commit firmato ritentato senza bypass:
+`git commit -m 'test: 🔬 trace Rastoria slope ascents and Sprint gate' -m 'Co-authored-by: GPT-6 <noreply@openai.com>'`.
+Fallito con `error: 1Password: failed to fill whole buffer` e
+`fatal: failed to write commit object`. Staging precedente preservato;
+nuovo lavoro separato nel working tree, incluso `tools/slope_trace.py`.
+
+## COLLISION-SLOPE-02 — 2026-10-09
+
+### Original slope predicate and earliest hit information
+
+**CONFIRMED static:** setter `72A570` salva l'angolo in KCC `+34`, chiama
+`6EAB98` (import `cosf`) e salva il risultato in `+38`. `stepDown` carica
+questo coseno a `72A7E1`. Il closest callback `729CB0`, a `729DA5/729DA8`,
+rifiuta quando `threshold > dot(up, world_normal)`; l'uguaglianza è accettata.
+La sweep forward usa invece threshold zero. Non confondere questa soglia
+con `+9FDC=50`, che appartiene alla special action originale.
+
+**CONFIRMED runtime:** up-axis `+E8=1` (Y), angle `0.0182770453393`, cosine
+`0.999832987785`. La normale storica `Ny≈0.2638` è non walkable secondo
+questo criterio. Non è stata sostituita con una soglia convenzionale in gradi.
+Flat normal e normale di una rampa ordinaria non sono misure nuove consolidate:
+il confronto runtime fra tutte le geometrie resta non eseguito dopo lo stop.
+
+**CONFIRMED static:** il nuovo hit è disponibile al return query `72AC99`;
+la frazione viene confrontata con 1 a `72ACAD`. Prima di `72ACC8 -> 72B3C0`
+sono disponibili normale, hit object, fraction e target/current. Il recovery
+precedente `72AB3C` usa invece la normale cached KCC `+D0` quando `+C0!=0`
+e il dot con la direzione normalizzata è positivo. Non è un nuovo sweep hit.
+
+### Pre-projection filter, vectors and latch
+
+`tools/pre_projection.py`, usato da `slope_trace.py --pre-projection`, crea
+copie private rilocate di playerStep/forward. Solo la vtable dell'istanza KCC
+verificata le chiama; codice immagine e proiezione originale restano intatti.
+Il gate intercetta solo il logical callsite `72ACC8`, non `72AB3C`.
+Filtri: player/KCC/ID fisico della sessione, FF/FE, F8A6=1/F8AD=0,
+owner/controller/channel corrente e descriptor clip 122. Nessun fattore globale.
+L'ID è risolto nuovamente dopo il riavvio (8 in questa sessione), non fisso a 10.
+
+Con hit valido, `normal.Y < native_cosine` e `dot(incoming,normal)<0`,
+il gate attiva il latch e, solo se `+9F24` contiene il run value boosted,
+divide `target-current` per il multiplier una volta per physics update.
+La proiezione originale riceve quel target. Producer e animation getter usano
+il latch per sopprimere i multiplier futuri. Un forward pass senza contatto
+qualificante lo rilascia; non occorre attendere un vettore zero o un timer.
+Questo rilascio non considera il recovery cached: è un limite del candidato.
+
+**HIGH CONFIDENCE, dati flat riutilizzati:** nel tratto `-10<X<-8.8`, Y=1.4,
+12 campioni vanilla/1.15/1.25 hanno `vector.Y=0` e
+`vector.X / producer_dt / multiplier = -10.1624334..-10.1624244`.
+Z normalizzato varia `0.0624586..0.0625977`, compatibile con cancellazione
+float del target world. Questo sostiene la divisione sul piano; non dimostra
+che la Y già prodotta dal terreno sia tutta un contributo Sprint lineare.
+La vanilla equivalente è ricostruita, non un vettore originale preservato
+atomico nello stesso update. L'extra è incoming meno tale ricostruzione.
+
+I record collegano sequence/thread/KCC, current/target, normale/object/fraction,
+incoming/vanilla equivalente/extra/passed/projected, native cosine/dot,
+run value, eligibility, applied e latch. `passed` nelle prove 1.25 include
+l'arrotondamento target-current dopo lo store; nelle prove 1.15 è il quotient
+prima di tale arrotondamento. Ghost/preStep/playerStep condividono il sequence.
+Poll producer/input/playback e tempo monotonic sono osservazioni separate,
+non una snapshot atomica con il thread fisico. Conflitti/overflow invalidano
+la cattura. Copie private senza unwind registration: diagnostica bounded,
+non un design di produzione o una validazione generale di concorrenza/lifecycle.
+
+### Rastoria validation
+
+Anticamera, stessa lastra verificata visivamente. Camera e right stick non
+manovrati; input virtuale `(-0.5,0.8660254)`, buttons 0, impulso 4.0 s;
+assi consumati `(-65,-111)`, direzione circa -X con piccola +Z.
+Cap richiesto 30 prima del riavvio Steam, senza nuova verifica FPS esterna.
+Baseline bits `3E2D712B`. Reset tramite pad inverso, senza teleport/memory writes:
+gli start sono bounded, non identici. Ogni cattura completa dura 30 s.
+
+| Capture locale | Move/animation | Ghost start XYZ | Max ghost Y | Deboost events |
+|---|---|---|---|---|
+| preproj-vanilla-02 | 1/1 | -7.177174, 1.400000, 131.747375 | 1.595798 | 0 |
+| preproj-115-01 | 1.15/1 | -7.693682, 1.400000, 131.640152 | 1.604610 | 3 |
+| preproj-vanilla-03 | 1/1 | -7.310448, 1.400000, 131.632523 | 1.593651 | 0 |
+| preproj-115-02 | 1.15/1 | -7.349705, 1.400000, 131.632217 | 1.595754 | 2 |
+| preproj-vanilla-04 | 1/1 | -7.238592, 1.400000, 131.640228 | 1.596203 | 0 |
+| preproj-115-03 | 1.15/1 | -7.249524, 1.400000, 131.641937 | 1.595841 | 2 |
+| preproj-125-01 | 1.25/1.25 | -7.084576, 1.400000, 131.642502 | 1.596424 | 2 |
+| preproj-vanilla-05 | 1/1 | -7.574902, 1.400000, 131.640060 | 1.596197 | 0 |
+| preproj-125-02 | 1.25/1.25 | -6.857341, 1.400000, 131.642487 | **12.982490** | 11 |
+
+**CONFIRMED runtime:** tre prove 1.15 stabili, prima 1.25 stabile, seconda
+1.25 fallita. Tutte `restored`, overflow/conflicts zero, special calls zero.
+Animation 1.25 osservata fuori latch e 1 durante soppressione; walk 2 preservato.
+Non si deduce un default sicuro 1.15 da queste sole tre prove.
+Controllo vanilla-02 precede la correzione del filtro ID: stessa copia originale,
+nessun deboost, eligibility false. I successivi controlli vanilla registrano
+eligibility vera e non modificano target/latch. Vanilla-01 è esclusa: pad
+riconnesso non consumato, zero movimento. Due setup allocation falliti prima
+degli hook sono esclusi; near code e ring ora allocati separatamente.
+
+### First bad update and stop
+
+**CONFIRMED runtime, preproj-125-02 sequence 481, thread 50540:** detector
+`abs(deltaY)>0.2` scatta con ghost Y `1.413463235 -> 1.844524145`
+(delta `+0.431060910`). Al sequence 483 Y supera 2.0. Requested displacement
+KCC `+50` è già `(-0.387470275, +0.355826199, +0.002380371)`.
+preStep corregge ghost a `(-18.611001968,1.414867520,131.490646362)`;
+playerStep lo porta a `(-18.728504181,1.844524145,131.493072510)`.
+Il delta playerStep è `(-0.117502213,+0.429656625,+0.002426147)`.
+Latch before/after **false/false**, `applied=false` perché nessun evento
+`72ACC8` né callback forward è registrato in questo update.
+
+KCC cached `+D0` prima del playerStep:
+`(-0.964579582,-0.263792157,-0.000155674)`; `+C0=1`.
+**HIGH CONFIDENCE:** il ramo recovery originale `72AB3C` è il percorso
+sfuggito al filtro. Con requested e cached normal letti, il dot vale
+`+0.279881385`; la proiezione calcolata produce
+`(-0.117502406,+0.429656713,+0.002423941)`, coincidente entro float con
+il delta playerStep. È una derivazione sostenuta dal ramo statico e dal delta,
+non una chiamata recovery osservata direttamente dal nuovo shim.
+La hit fraction e gli esatti target interno prima/dopo recovery sono **UNKNOWN**
+in quell'update; la fraction di un nuovo hit non va attribuita alla recovery.
+Vanilla-equivalent/extra non sono stati calcolati/applicati dal gate in seq481.
+La richiesta animation osservata a elapsed monotonic 15.199551 s è 122/rate 1;
+la successiva è idle 0 a 19.196622 s. Clip 122 nel primo update anomalo è
+**HIGH CONFIDENCE**, non una lettura channel atomica del seq481.
+Ultimo nuovo hit precedente: seq463, fraction 0.500332475, deboost applicato,
+latch false->true. Il rilascio successivo ha consentito nuova produzione boosted.
+
+Quindi non è dimostrato che un vettore già riportato a vanilla nel primo update
+anomalo continui a salire: **il gate non copre quell'update**. Il requested Y
+già positivo rende inoltre insufficiente una giustificazione basata sul solo
+scaling flat. Non aggiunte projection alternative, clamp Y, gravity o ghost writes.
+
+### Flat/slope/wall controls and readiness
+
+**NOT READY. Unico blocker successivo:** prevenire l'ascesa ordinaria anche
+quando entra il recovery cached `72AB3C` senza nuovo hit `72ACC8`, preservando
+il contributo vanilla prima della produzione di requested Y positivo.
+Riconsiderare il punto `1E9980` e la correlazione con il target originale nella
+prossima sessione; non approvare l'attuale latch come soluzione di release.
+
+STOP dopo il fallimento, come richiesto: nessuna terza prova 1.25, nuovi
+flat/ramp/wall obliquo/parallel/away, town/combat/lifecycle o implementazione
+Sprint. I controlli non eseguiti restano subordinati al medesimo gate.
+Nessuna nuova calibrazione animation, test FPS, TRACE-246 o Audio.
+
+### Cleanup and Git
+
+**CONFIRMED cleanup:** prima dell'uscita, vptr player/KCC/channel originali
+`14080AE08 / 140879BD0 / 140822AE8`; gioco chiuso, pagine private terminate.
+Pad reset/disconnect via finally; limiter `restored, fps:null`.
+Mod locali originali ripristinati e Special K injection riavviata.
+SKIFsvc32/SKIFsvc64 attivi e nessun processo sao_hr al controllo finale.
+Nessuna patch permanente EXE/CPK, nuovi driver o capture commessi.
+Self-check `pre_projection`, `slope_trace`, `run_perturb`, `walk_trace`,
+py_compile dei quattro tool, parse TOML e `git diff --check` passati.
+Signature corta setter `72A570` unica e al RVA previsto; SHA-256 EXE invariata.
+
+Il retry del commit precedente è riuscito prima di questo nuovo lavoro:
+`3465c26 test: 🔬 trace Rastoria slope ascents and Sprint gate`, con firma SSH.
+L'errore 1Password riportato in SLOPE-01 è storico. Nuovo lavoro diagnostico
+SLOPE-01/02 mantenuto nel working tree, separato dal commit precedente.

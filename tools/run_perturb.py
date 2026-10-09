@@ -21,7 +21,8 @@ RUN_BASELINES = (0x3E2BB98D, 0x3E2D712B)
 
 
 def perturb_shim(log: int, original: int, pc: int, physics_id: int, factor: float,
-                 baseline_bits: int = 0x3E2BB98D) -> bytes:
+                 baseline_bits: int = 0x3E2BB98D,
+                 suppression_address: int | None = None) -> bytes:
     if baseline_bits not in RUN_BASELINES:
         raise ValueError("Only captured exploration run baselines allowed")
     if factor not in (1.00, 1.10, 1.15, 1.20, 1.25):
@@ -44,6 +45,9 @@ def perturb_shim(log: int, original: int, pc: int, physics_id: int, factor: floa
         require_equal(bytes.fromhex("4C 39 D0"))
     # Match the captured original exactly; do not broaden the run branch guard.
     require_equal(bytes.fromhex("66 0F 7E D0 3D") + struct.pack("<I", baseline_bits))
+    if suppression_address is not None:
+        code.extend(bytes.fromhex("49 BA") + struct.pack("<Q", suppression_address))
+        require_equal(bytes.fromhex("41 83 3A 00"))
     code.extend(bytes.fromhex("B8") + struct.pack("<f", factor))
     code.extend(bytes.fromhex("50 F3 0F 59 14 24 58"))  # multiply incoming xmm2 only
     restore = len(code)
@@ -57,7 +61,8 @@ def perturb_shim(log: int, original: int, pc: int, physics_id: int, factor: floa
 def animation_rate_shim(log: int, original: int, pc: int, physics_id: int,
                         owner: int, controller: int, channel: int,
                         movement_factor: float, animation_factor: float,
-                        baseline_bits: int = 0x3E2BB98D) -> bytes:
+                        baseline_bits: int = 0x3E2BB98D,
+                        suppression_address: int | None = None) -> bytes:
     if baseline_bits not in RUN_BASELINES:
         raise ValueError("Only captured exploration run baselines allowed")
     if animation_factor not in (1.10, 1.15, 1.20, 1.25):
@@ -94,6 +99,9 @@ def animation_rate_shim(log: int, original: int, pc: int, physics_id: int,
     guard.extend(bytes.fromhex("49 6B C3 28"))  # descriptor stride is 40
     reject(bytes.fromhex("41 81 7C 02 18") + struct.pack("<i", 122))
     reject(bytes.fromhex("44 3B 99 14 01 00 00"))  # index must still match
+    if suppression_address is not None:
+        guard.extend(bytes.fromhex("49 BA") + struct.pack("<Q", suppression_address))
+        reject(bytes.fromhex("41 83 3A 00"))
     guard.extend(bytes.fromhex("B8") + struct.pack("<f", animation_factor))
     guard.extend(bytes.fromhex("50 F3 0F 59 04 24 58"))
     for displacement in jumps:

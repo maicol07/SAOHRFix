@@ -1,5 +1,17 @@
 # Player / movement
 
+Aggiornamento 9 ottobre 2026, **CONFIRMED static/runtime**:
+KCC player vtable `879BD0`, update +08 `58D340`, preStep +38 `72A160`,
+playerStep +40 `729EF0`, callback +60 `5875A0`. Forward `72A9D0` chiama
+la proiezione `72B3C0` a `72ACC8`, poi callback return `72ADDB`.
+Con normale unitaria e fattore 1, target-current viene proiettato come
+`v-dot(v,n)*n`; target Y store `72B5EA`, ghost publication `72A139`.
+Trace sincronizzato conferma richiesta Y negativa convertita in delta ghost
+positivo sulla lastra Anticamera; preStep recovery e callback non spostano
+le posizioni nei trace di grande ascesa. Movement-only 1.15 raggiunge Y=14.218.
+Il fallback dopo contatto fallisce: **NOT READY**, prevenzione prima della
+submission ascendente ancora da verificare. Dettagli e limiti nel report.
+
 Aggiornamento 1 ottobre 2026: stato corrente in
 [movement-report.md](movement-report.md). Le catture manuali e le liste di gap
 qui sotto sono il baseline preservato nel commit `ddca350`; alcune lacune sono

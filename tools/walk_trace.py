@@ -162,7 +162,8 @@ def shim(log: int, original: int, pc: int, production: int, animation: int) -> b
 
 def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
           production_builder: Callable[[int, int], bytes],
-          rate_builder: Callable[[int, int], bytes]) -> None:
+          rate_builder: Callable[[int, int], bytes],
+          kcc_entries: dict[int, int] | None = None) -> None:
     identity = resolve(reader, pc)
     _, wrapper, kcc = identity
     ghost = struct.unpack("<Q", reader.read(kcc + 0x10, 8))[0]
@@ -228,6 +229,10 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
     try:
         vtable = bytearray(reader.read(original_vptr - 8, 0x108))
         struct.pack_into("<Q", vtable, 8 + 0x18, entry)
+        for slot, target in (kcc_entries or {}).items():
+            if slot not in (0x08, 0x38, 0x40, 0x60):
+                raise ValueError("Unsupported physics diagnostic slot")
+            struct.pack_into("<Q", vtable, 8 + slot, target)
         write(page, bytes(vtable))
         pc_copy = bytearray(reader.read(pc_vptr - 8, 0x998))
         struct.pack_into("<Q", pc_copy, 8 + 0x3E8, producer_entry)
