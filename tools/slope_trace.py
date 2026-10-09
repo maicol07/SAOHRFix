@@ -5,6 +5,7 @@ Records stay in private memory until exit; original physics calls preserved.
 Optional movement/rate perturbation is diagnostic only. The contact fallback
 failed the wall-ascent gate; it is not a validated Sprint safety mechanism.
 Pre-projection mode deboosts a private forward target before the original response.
+Cached suppression before production also failed the Rastoria ascent gate.
 Run self-check before live use. Output is diagnostic fields, not process dumps.
 """
 from __future__ import annotations
@@ -25,7 +26,7 @@ from runtime_read import BASE, ProcessReader
 from walk_trace import rate_shim, trace
 
 CAPACITY = 4096
-STRIDE = 2048
+STRIDE = 4096
 TARGETS = {0x08: 0x58D340, 0x38: 0x72A160, 0x40: 0x729EF0, 0x60: 0x5875A0}
 SNAPSHOTS = {'update_before': 64, 'update_after': 224,
              'prestep_before': 384, 'prestep_after': 544,
@@ -63,6 +64,12 @@ def build_shim(page: int, slot: int, movement: float, animation: float,
             for j in range(0, size, 8): copy('49 8B 86', src + j, offset + dst + j)
         normal_offset = 1920 + ((offset - 64) // 160) * 16
         for j in (0, 8): copy('49 8B 86', 0xD0 + j, normal_offset + j)
+        imm('49 BB', pc)
+        gameplay_offset = 2048 + ((offset - 64) // 160) * 80
+        for source, destination in [(0x9DE0, 0), (0x9E20, 16), (0x9DF0, 32), (0x9E10, 48)]:
+            for j in (0, 8): copy('49 8B 83', source + j, gameplay_offset + destination + j)
+        copy('49 8B 83', 0x9F24, gameplay_offset + 64)
+        emit('41 0F B6 83 47 A0 00 00'); store(gameplay_offset + 72)
 
     # Save all volatile SIMD arguments, integer arguments, and fifth stack arg.
     for reg in range(6):
@@ -80,7 +87,7 @@ def build_shim(page: int, slot: int, movement: float, animation: float,
     if slot == 0x08:
         emit('B8 01 00 00 00 F0 49 0F C1 04 24')
         emit('48 3D'); code.extend(struct.pack('<I', CAPACITY)); jump('0F 83', 'overflow')
-        emit('48 89 C2 48 FF C2 48 C1 E0 0B')
+        emit('48 89 C2 48 FF C2 48 C1 E0 0C')
         imm('49 BD', page + 0x6000)
         emit('49 01 C5 49 89 55 00 65 48 8B 04 25 48 00 00 00'); store(8)
         emit('31 C0 F0 4D 0F B1 2F'); jump('0F 85', 'conflict')
@@ -233,9 +240,17 @@ def main() -> None:
                         help='Experimental contact fallback; failed wall-ascent validation')
     parser.add_argument('--pre-projection', action='store_true',
                         help='Experimental player-only forward projection deboost')
+    parser.add_argument('--cached-recovery', action='store_true',
+                        help='Trace original cached projection alongside the forward gate')
+    parser.add_argument('--cached-suppress', action='store_true',
+                        help='Experimental cached gate before production; failed Rastoria validation')
     args = parser.parse_args()
     if args.pre_projection and args.suppress_on_contact:
         parser.error('Choose one diagnostic suppression strategy')
+    if args.cached_recovery and not args.pre_projection:
+        parser.error('Cached recovery requires private pre-projection copies')
+    if args.cached_suppress and not args.cached_recovery:
+        parser.error('Cached suppression requires the direct recovery trace')
     if not math.isfinite(args.seconds) or not 0 < args.seconds <= 60: parser.error('seconds must be 0..60')
     reader = ProcessReader(args.pid)
     api = reader.api
@@ -260,7 +275,8 @@ def main() -> None:
         projection = None
         if args.pre_projection:
             from pre_projection import prepare
-            projection = prepare(reader, handle, page, args.pc, kcc, args.movement, args.baseline_bits)
+            projection = prepare(reader, handle, page, args.pc, kcc, args.movement,
+                                 args.baseline_bits, args.cached_recovery, args.cached_suppress)
         for index, slot in enumerate(TARGETS):
             entries[slot] = page + index * 4096
             code = build_shim(page, slot, args.movement, args.animation, args.pc,
@@ -275,15 +291,29 @@ def main() -> None:
         controller = struct.unpack('<Q', reader.read(owner + 0x108, 8))[0]
         channel = struct.unpack('<Q', reader.read(controller + 0x2F0, 8))[0]
         def production(log: int, original: int) -> bytes:
-            return perturb_shim(log, original, args.pc, identity[0], args.movement,
+            code = perturb_shim(log, original, args.pc, identity[0], args.movement,
                                 args.baseline_bits, page + 0x4018 if args.suppress_on_contact or args.pre_projection else None)
+            if args.cached_recovery and projection:
+                from pre_projection import producer_recorder
+                code = producer_recorder(projection['page'], projection['producer_records'], page + 0x4018,
+                                         kcc if args.cached_suppress else 0) + code
+                if len(code) >= 4096: raise ValueError('Producer recorder exceeds private slot')
+                buffer = ct.create_string_buffer(code); count = ct.c_size_t()
+                address = projection['page'] + 0x6000
+                if not api.WriteProcessMemory(handle, address, buffer, len(code), ct.byref(count)) or count.value != len(code):
+                    raise ct.WinError(ct.get_last_error())
+                if not api.FlushInstructionCache(handle, address, len(code)): raise ct.WinError(ct.get_last_error())
+                return bytes.fromhex('FF 25 00 00 00 00') + struct.pack('<Q', address)
+            return code
         def rate(log: int, original: int) -> bytes:
             if args.animation == 1: return rate_shim(log, original)
             return animation_rate_shim(log, original, args.pc, identity[0], owner, controller,
                                        channel, args.movement, args.animation, args.baseline_bits,
                                        page + 0x4018 if args.suppress_on_contact or args.pre_projection else None)
-        print(json.dumps({'physics_trace': 'setup', 'schema': 2,
+        print(json.dumps({'physics_trace': 'setup', 'schema': 3,
                           'suppression_enabled': args.suppress_on_contact or args.pre_projection,
+                          'cached_recovery_enabled': args.cached_recovery,
+                          'cached_suppression_enabled': args.cached_suppress,
                           'pre_projection_enabled': args.pre_projection}), flush=True)
         trace(reader, args.pid, args.pc, args.seconds, production, rate, entries)
         if projection:
@@ -299,6 +329,13 @@ def main() -> None:
             if sequence != index + 1 or complete != sequence: continue  # in-flight update, not published
             if struct.unpack('<Q', reader.read(address + 16, 8))[0] != sequence: raise ValueError('Unstable published update')
             stages = {name: decode_snapshot(record, offset) for name, offset in SNAPSHOTS.items()}
+            for index, stage in enumerate(stages.values()):
+                offset = 2048 + index * 80
+                stage['gameplay'] = {name: struct.unpack_from('<4f', record, offset + delta)
+                                     for name, delta in [('current', 0), ('target', 16),
+                                                         ('integrated', 32), ('requested', 48)]}
+                stage['gameplay']['speed'] = struct.unpack_from('<f', record, offset + 64)[0]
+                stage['gameplay']['A047'] = struct.unpack_from('<Q', record, offset + 72)[0]
             events = []
             for j in range(min(callbacks, 7)):
                 off = 1024 + j * 128

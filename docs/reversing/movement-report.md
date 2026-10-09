@@ -3,9 +3,11 @@
 **Aggiornamento:** le sezioni fino a “Baseline readiness” conservano il report
 manuale del commit `ddca350`. Le conclusioni correnti, che sostituiscono le sue
 incertezze e lo stato finale storico, iniziano da “Analog input path”.
-La decisione finale corrente è in **“COLLISION-SLOPE-02 — 2026-10-09”**:
-**NOT READY**. Anche il deboost prima del nuovo hit forward fallisce:
-un update di recovery con requested Y già positivo sfugge al filtro.
+La decisione finale corrente è in **“COLLISION-SLOPE-03 — 2026-10-09”**:
+**NOT READY**. Il recovery cached è osservato direttamente. Anche il ritorno
+al parametro vanilla prima della produzione lascia una salita; il gate
+basato su `+C0` inoltre rilascia durante l'ascesa. Serve riconsiderare il punto
+di applicazione dello Sprint rispetto al target terreno e al primo contatto.
 
 Data: 1 ottobre 2026. Build Steam PC, SHA-256
 `1923f0d8d2cad559d6ad6e001af54ea5ea5aa70171323f42d4e1fa3d63699e43`.
@@ -1615,3 +1617,207 @@ Il retry del commit precedente è riuscito prima di questo nuovo lavoro:
 `3465c26 test: 🔬 trace Rastoria slope ascents and Sprint gate`, con firma SSH.
 L'errore 1Password riportato in SLOPE-01 è storico. Nuovo lavoro diagnostico
 SLOPE-01/02 mantenuto nel working tree, separato dal commit precedente.
+
+## COLLISION-SLOPE-03 — 2026-10-09
+
+### Decision
+
+**NOT READY. Candidato cached suppression respinto alla prima prova.**
+**Unico blocker successivo:** individuare un punto di applicazione Sprint che
+preservi il percorso vanilla di query terreno/primo contatto, prima che
+l'arrivo accelerato sulla lastra produca uno stato KCC e target già divergenti.
+Riportare soltanto il parametro `1E9980` a vanilla dopo quel contatto non basta.
+Non approvata una state machine production né una patch del recovery.
+
+### Native cached recovery and lifecycle
+
+**CONFIRMED static, `72A160`:** `72A1A0` azzera `KCC+C0` a ogni `preStep`.
+La scansione dei contatti considera distanze negative; conserva la normale
+del contatto più penetrante del pass a `+D0` (`72A36C`). Il segno dipende
+dall'identità del ghost nel manifold: i due fattori sono `+1/-1`, non il
+segno di Y. Per i contatti penetranti somma a `current+70` una correzione
+proporzionale a normale firmata e distanza negativa. `72A440` pone `+C0=1`
+se il pass ha corretto una penetrazione. Ci sono fino a cinque pass; un pass
+successivo senza penetrazione non cancella il flag già posto a 1.
+La posizione ghost viene aggiornata; al termine current/target sono riallineati
+al ghost. `+D0` non viene azzerato quando `+C0` si azzera.
+
+Quindi `+C0` significa operativamente **penetrazione corretta in questo
+preStep**, non on-ground, presenza di un nuovo sweep o memoria persistente
+di ogni superficie pericolosa. Può restare visibile al producer fra gli update,
+ma torna zero al prossimo preStep se non serve una correzione. Il cached
+normal non basta da solo a qualificare un contatto ancora attivo.
+
+**CONFIRMED static, `72A9D0`:** target `+90` riceve current più displacement.
+`72AAF9` richiede `+C0!=0`. `72AB09..72AB2A` calcola il dot fra **direction
+normalizzata `+60`** e cached normal `+D0`; `72AB2E/72AB32` salta se il dot
+è `<=0` oppure unordered. Per dot positivo `72AB3C` chiama l'originale
+`72B3C0` con `RDX=&D0`, `XMM2=0`, `XMM3=1`, modificando il target `+90`.
+Non esiste una nuova hit fraction da attribuire a questa chiamata.
+
+La normale cached firmata punta **dentro** la superficie: la correzione con
+distanza negativa sposta fuori. Il ramo originale interpreta quindi dot
+positivo come movimento dentro la superficie. Allontanarsi inverte il dot e
+salta il ramo. La classificazione walkable del cached normal usa l'orientamento
+opposto, `-normal.Y`, contro il cosine nativo; non va copiato il segno del
+nuovo hit forward. Il comportamento away è dimostrato staticamente; il sanity
+runtime di rilascio non è approvato perché il candidato fallisce prima.
+
+### Direct trace and original producer input
+
+`slope_trace --pre-projection --cached-recovery` aggiunge uno shim sul solo
+call site `72AB3C` della copia privata del forward. La chiamata/proiezione
+originale è preservata. Nessuna scrittura su C0/D0, normal, ghost o immagine
+EXE. Il record recovery contiene sequence/thread del physical update,
+current/target prima e dopo, requested `+50`, direction `+60`, C0/D0, dot,
+ghost prima/dopo playerStep e snapshot gameplay current/target/integrated/request.
+Il ghost after è correlato solo se sequence/thread/completion del record
+physical coincidono. I ring sono bounded e overflow/conflicts invalidano la prova.
+
+Il prefix del setter conserva **prima della perturbazione** parametro XMM2,
+target in ingresso e current, oltre ai valori preesistenti 9E20/9DF0/9E10.
+Il producer ha una propria sequence di pubblicazione; la latest sequence
+nel recovery è una correlazione cross-thread, non un frame gameplay atomico.
+Le coordinate e il parametro concordano nei record citati sotto.
+Non sono stati eseguiti due integrator alternativi: il campo integrated al
+producer è lo stato già presente, **non un displacement vanilla controfattuale**.
+Anche il target in ingresso è comune a vanilla/boost prima della query;
+non è il target terreno originale da riusare dopo una query diversa.
+
+**CONFIRMED runtime, `cached-trace-125-02`, seq299/thread20128:**
+recovery osservato con `C0=1`, latch false, parametro boosted `0.211721271`.
+Requested `(-0.405292541,+0.322403222,-0.000228882)`;
+normal `(-0.964578271,-0.263796896,-0.000097704)`;
+dot requested/normal `+0.305887431`.
+Current prima della proiezione `(-18.608367920,1.447212100,131.376174927)`;
+target prima `(-19.013660431,1.769615293,131.375946045)`;
+target dopo `(-18.718608856,1.850307465,131.375976562)`.
+Projected displacement `(-0.110240936,+0.403095365,-0.000198364)`.
+Il playerStep termina a ghost Y `1.815307498`: il passo verticale originale
+di 0.035 spiega l'offset dal target interno, non un clamp diagnostico.
+Questo sostituisce la sola ricostruzione offline SLOPE-02 con una chiamata
+recovery direttamente osservata.
+
+### Positive requested Y: gameplay precedes Bullet
+
+**CONFIRMED runtime:** il setter riceve target Y uguale a current Y.
+Nel primo recovery citato, current gameplay Y `0.011796951`, integrated
+9DF0 Y `0.011796951`, ma target 9E20 e request 9E10 Y **`0.684442341`**.
+`A047=0`: l'integrazione ordinaria non ha generato quella Y aggiuntiva.
+La Y positiva è già presente prima di update/preStep del KCC; non nasce
+dentro il recovery. Il ghost ha l'offset di capsula circa 1.4 rispetto a
+current gameplay: confrontare quote nello stesso sistema di coordinate.
+
+**CONFIRMED static:** `1E9980` conserva il target in ingresso a 9E20 e il
+parametro a 9F24. Il caller normale costruisce target da direzione e current.
+`1F69B0` azzera la componente Y della direzione quando `A047&4==0` e integra
+in 9DF0. Esiste anche una correzione successiva a `1F70A2`, condizionata da
+altri flag, ma nei record citati integrated Y resta current Y.
+`1F5240/1F5250` copia 9DF0 in 9E10; il virtuale `+178` entra in **`1F5B30`**.
+Questo prepara la query superficie usando la posizione richiesta, con risultato
+quota in stack `+50` e normale in stack locale. Con A04C/A01E appropriati
+`1F5E15` assegna la quota al target 9E20; per il request esistono il ramo
+`1F5E99` e il percorso ordinario A025=0 `1F64DD..1F663D`. Quest'ultimo chiama
+`164840` con riferimento a 9E10 e indice componente 1 per assegnarne Y.
+Le condizioni alternative di gameplay possono correggere ulteriormente la quota.
+
+**HIGH CONFIDENCE:** questa preparazione superficie fra integrazione e wrapper
+è il primo produttore della Y aggiuntiva osservata. La sequenza setter-flat,
+integrated-flat, target/request rialzati e le scritture statiche concordano.
+Il singolo store effettivo interno a `1F5B30` e ogni risultato intermedio della
+query non sono stati instrumentati direttamente: non dichiarare un exact-store
+trace né attribuire automaticamente tutto a `1F663D`.
+Il boost cambia XZ integrati e quindi il punto interrogato prima del KCC;
+preservare solo il parametro originale non conserva questa storia geometrica.
+Non applicata divisione della Y di recovery; nessun risultato integrato originale
+è stato inventato tramite `requested/multiplier`.
+
+### Preventive cached candidate and controlled results
+
+`--cached-suppress` valuta il cached contact **prima** della moltiplicazione
+nel producer: C0!=0, outward normal non-walkable, dot fra target corrente in
+ingresso meno current e cached normal positivo. Imposta il latch condiviso
+per movement/animation. Il forward wrapper, quando non c'è nuovo hit
+qualificante, consulta anche cached C0/D0 e requested reale prima di rilasciare.
+Il recovery originale resta invariato. Il log conserva latch prima/dopo e
+geometria del producer; il decoder espone transizioni e motivo del gate.
+Il flag C0 non viene trattato come ground flag né alterato.
+
+Tutte le catture usano pad software, impulso `x=-0.5, y=0.8660254`, buttons=0,
+4.0 s, camera non manovrata, stesso processo/area Anticamera, profilo target
+30 FPS preavvio. Nessun nuovo confronto FPS. Direzione world quasi -X con
+piccola componente -Z in questa sessione. Yaw/camera numerici non catturati;
+il vettore world è letto. Reset con pad e attesa, senza teleport/scritture ghost.
+Gli start sono vicini ma **non bit-identical**; non presentare la baseline
+come prova causale perfetta dello stesso stato interno al contatto.
+
+| Capture | Move/animation | Ghost start XYZ | Max ghost Y | Cached recovery | Esito |
+| --- | --- | --- | ---: | ---: | --- |
+| cached-trace-125-01 | 1.25/1.25, vecchio gate | (-6.993392,1.400000,132.793457) | 1.652868 | 0 | esclusa: geometria/lane diversa |
+| cached-trace-125-02 | 1.25/1.25, vecchio gate | (-8.114193,1.400000,131.382248) | 8.210943 | 10 | riproduce recovery e ascesa |
+| cached-suppress-125-01 | 1.25/1.25, nuovo candidato | (-8.099896,1.400000,131.402527) | 14.217790 | 5 | FAIL; STOP |
+| cached-vanilla-01 | 1.00/1.00, solo trace | (-8.462970,1.400000,131.444199) | 1.599308 | 0 | controllo vicino stabile |
+
+**CONFIRMED runtime, candidato:** producer seq15 ha parametro originale
+`0.169377014`, target/current Y `0.011368990`, C0=1 e normale
+`(-0.964572906,-0.263816476,-0.000101893)`; latch false->true **prima** del boost.
+Recovery physical seq299 legge proprio il parametro vanilla `0.169377014`,
+latch true e latest producer seq15. Integrated Y resta `0.011368990`,
+ma target/request Y diventa `0.076233149`; requested KCC Y `+0.044765744`.
+La proiezione originale produce Y `+0.160773635`, ghost after Y `1.572506547`.
+
+| Physical sequence | Latest producer | Parametro durante recovery | Latch | Ghost Y dopo |
+| ---: | ---: | ---: | --- | ---: |
+| 299 | 15 | 0.169377014 | true | 1.572506547 |
+| 301 | 16 | 0.169377014 | true | 1.684026837 |
+| 303 | 17 | 0.169377014 | true | 1.894337177 |
+| 309 | 20 | 0.169377014 | true | 2.074179411 |
+| 311 | 21 | 0.169377014 | true | 2.291207075 |
+
+Nei primi tre producer consecutivi soppressi la quota continua a crescere.
+Il terzo recovery aggiunge circa 0.2103 Y: il detector `abs(deltaY)>0.2`
+individua già una salita mentre il parametro è vanilla. Quindi la sola
+suppression prima della produzione non elimina il comportamento su uno
+stato raggiunto precedentemente con boost.
+Producer seq18 vede C0=0 e latch true->false: physical seq305 legge parametro
+boosted `0.211721271` e ghost supera Y=2. Successivamente il gate torna attivo
+nei producer 19/20/21; poi diversi C0=0 lo rilasciano nuovamente mentre i nuovi
+hit lo riattivano. **Nessuna stabilità on/off dimostrata.** Il picco 14.217790
+include dunque produzione nuovamente boosted: non attribuirlo tutto al recovery
+con parametro vanilla. Il problema della suppression e quello del rilascio
+sono entrambi osservati nello stesso candidato fallito.
+
+Tutti i quattro log completati riportano restored, conflicts/overflow/invalid=0;
+nessuna special call 246. Clip/rate sono quelli del contesto run verificato;
+rate getter campionato mostra original 1 e return 1/1.25, ma il suo polling
+worker non è una lettura atomica del singolo recovery. Nessuna nuova calibrazione.
+Il controllo vanilla termina vicino X=-18.346, mentre l'arrivo boosted aveva
+raggiunto circa X=-18.61 al primo cached contact: la storia di posizione/contact
+è già differente prima di rendere il parametro vanilla.
+
+**PROBABLE:** arrivo più profondo, query superficie e storia dei contatti
+costituiscono il feedback che la sola suppression del parametro non annulla.
+Non dimostrato quale di questi stati richieda una diversa architettura;
+non chiamare il fenomeno tunneling né correggere la normale/proiezione.
+
+### Stop, cleanup and verification
+
+Stop dopo una failure del candidato, come richiesto. Nessuna seconda variante,
+nuovi test flat/ramp/parallel/away, town/combat/lifecycle o implementazione
+Sprint. Il solo controllo vanilla vicino completa il confronto diagnostico.
+Questi sanity restano subordinati al blocker; nessun READY, default multiplier
+approvato o specifica production. Non iniziato Audio.
+
+**CONFIRMED cleanup:** vptr originali player/KCC/channel
+`14080AE08 / 140879BD0 / 140822AE8` verificati prima dell'uscita. Gioco chiuso,
+pagine private eliminate con il processo; pad neutral/disconnect via finally,
+limiter restored `fps:null`. Due mod locali ripristinate nello stato attivo
+originale; SKIFsvc32/64 nuovamente attivi. Nessun EXE/CPK modificato, nessun
+driver installato, catture e pagine private non commesse.
+
+SLOPE-01/02 è stato salvato separatamente nel commit firmato **`6db581b`**
+prima delle modifiche SLOPE-03. La firma 1Password funziona. SLOPE-03 mantiene
+separati strumenti e risultati nuovi; nessuna perdita dello staging precedente.
+Self-check di `pre_projection`, `slope_trace`, `run_perturb`, `walk_trace`,
+py_compile dei quattro tool, parse dei due TOML research e `git diff --check`
+passati. SHA-256 EXE invariata rispetto alla build in apertura del report.

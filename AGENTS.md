@@ -54,8 +54,16 @@ closest callback 729DA5 rejects threshold > dot(up, normal).
 Pre-projection 72ACC8 deboost/latch passes three 1.15 trials but one of two
 1.25 trials reaches Y=12.982. First bad seq481 has positive requested Y,
 no new forward hit, latch off, +C0=1 and cached +D0 matching recovery 72AB3C.
-The sole next blocker is covering cached recovery and preserving vanilla
-before positive-Y production. Stop after failure; no Sprint implementation yet.
+COLLISION-SLOPE-03 directly traces cached recovery 72AB3C. C0 resets each
+preStep and means penetration corrected; D0 can remain stale with C0=0.
+Cached normal points inward; native recovery requires dot(direction60,D0)>0.
+Producer input/integrated Y stays current while gameplay target/request Y
+changes before KCC; surface preparation 1F5B30 is the high-confidence source.
+Cached suppression before 1E9980 fails: initial recovery calls read vanilla
+parameter but still ascend, then C0=0 releases the gate and boost resumes.
+The sole next blocker is preserving the vanilla terrain-query/first-contact
+path before accelerated arrival creates divergent state. Stop after failure;
+no Sprint implementation yet. See SLOPE-03 for exact captures and exclusions.
 SKIF native Stop/Start resolved its inaccessible UI on 2026-10-02. The user
 identified the historical lane as Anticamera delle Grandi Pianure Rastoria.
 Direct teleport to Anticamera is verified from the Rustoria regional map;
