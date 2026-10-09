@@ -17,8 +17,13 @@ import time
 from runtime_read import BASE, ProcessReader
 from walk_trace import producer_shim, rate_shim, trace
 
+RUN_BASELINES = (0x3E2BB98D, 0x3E2D712B)
 
-def perturb_shim(log: int, original: int, pc: int, physics_id: int, factor: float) -> bytes:
+
+def perturb_shim(log: int, original: int, pc: int, physics_id: int, factor: float,
+                 baseline_bits: int = 0x3E2BB98D) -> bytes:
+    if baseline_bits not in RUN_BASELINES:
+        raise ValueError("Only captured exploration run baselines allowed")
     if factor not in (1.00, 1.10, 1.15, 1.20, 1.25):
         raise ValueError("Only 1.00/1.10/1.15/1.20/1.25 diagnostic factors allowed")
     code = bytearray.fromhex("9C 50 41 52 49 BA") + struct.pack("<Q", pc)
@@ -37,8 +42,8 @@ def perturb_shim(log: int, original: int, pc: int, physics_id: int, factor: floa
         code.extend(bytes.fromhex("48 8B 84 24") + struct.pack("<i", stack_offset))
         code.extend(bytes.fromhex("49 BA") + struct.pack("<Q", caller))
         require_equal(bytes.fromhex("4C 39 D0"))
-    # Verified getter result is one ULP above float32(0.1677).
-    require_equal(bytes.fromhex("66 0F 7E D0 3D") + struct.pack("<I", 0x3E2BB98D))
+    # Match the captured original exactly; do not broaden the run branch guard.
+    require_equal(bytes.fromhex("66 0F 7E D0 3D") + struct.pack("<I", baseline_bits))
     code.extend(bytes.fromhex("B8") + struct.pack("<f", factor))
     code.extend(bytes.fromhex("50 F3 0F 59 14 24 58"))  # multiply incoming xmm2 only
     restore = len(code)
@@ -51,7 +56,10 @@ def perturb_shim(log: int, original: int, pc: int, physics_id: int, factor: floa
 
 def animation_rate_shim(log: int, original: int, pc: int, physics_id: int,
                         owner: int, controller: int, channel: int,
-                        movement_factor: float, animation_factor: float) -> bytes:
+                        movement_factor: float, animation_factor: float,
+                        baseline_bits: int = 0x3E2BB98D) -> bytes:
+    if baseline_bits not in RUN_BASELINES:
+        raise ValueError("Only captured exploration run baselines allowed")
     if animation_factor not in (1.10, 1.15, 1.20, 1.25):
         raise ValueError("Unsupported diagnostic animation factor")
     guard = bytearray()
@@ -69,7 +77,7 @@ def animation_rate_shim(log: int, original: int, pc: int, physics_id: int,
     reject(bytes.fromhex("41 81 BA CC 9F 00 00") + struct.pack("<i", physics_id))
     for offset, value in ((0xF8A6, 1), (0xF8AD, 0), (0xA9E9, 0xFF), (0xA9F0, 0xFE)):
         reject(bytes.fromhex("41 80 BA") + struct.pack("<iB", offset, value))
-    baseline = struct.unpack("<f", struct.pack("<I", 0x3E2BB98D))[0]
+    baseline = struct.unpack("<f", struct.pack("<I", baseline_bits))[0]
     reject(bytes.fromhex("41 81 BA 24 9F 00 00") + struct.pack("<f", baseline * movement_factor))
     for address, offset, expected in ((pc, 0x4C0, owner), (owner, 0x108, controller),
                                       (controller, 0x2F0, channel)):
@@ -106,6 +114,14 @@ def main() -> None:
         assert len(targets) == 1 and len([i for i in instructions if i.mnemonic == "jne"]) == 9
         assert len([i for i in instructions if i.mnemonic == "mulss"]) == 1
         assert bytes.fromhex("3D 8D B9 2B 3E") in code
+        observed = perturb_shim(0x12341A00, BASE + 0x1E9980, 0x213F9890, 10,
+                                1.25, 0x3E2D712B)
+        assert bytes.fromhex("3D 2B 71 2D 3E") in observed
+        rate = animation_rate_shim(0x12341E00, BASE + 0x6C6C80, 0x213F9890,
+                                   10, 0x22000000, 0x23000000, 0x24000000,
+                                   1.25, 1.25, 0x3E2D712B)
+        expected = struct.pack("<f", struct.unpack("<f", struct.pack("<I", 0x3E2D712B))[0] * 1.25)
+        assert bytes.fromhex("41 81 BA 24 9F 00 00") + expected in rate
         for factor in (1.00, 1.10, 1.15, 1.20, 1.25):
             assert len(perturb_shim(0x12341A00, BASE + 0x1E9980, 0x213F9890, 10, factor)) <= 0x200
         for factor in (1.10, 1.15, 1.20, 1.25):
@@ -125,6 +141,9 @@ def main() -> None:
     parser.add_argument("seconds", type=float)
     parser.add_argument("factor", type=float, choices=(1.00, 1.10, 1.15, 1.20, 1.25))
     parser.add_argument("--animation-factor", type=float, choices=(1.00, 1.10, 1.15, 1.20, 1.25), default=1.00)
+    parser.add_argument("--baseline-bits", type=lambda value: int(value, 0),
+                        choices=RUN_BASELINES, default=0x3E2BB98D,
+                        help="Exact run parameter from a preceding vanilla capture")
     args = parser.parse_args()
     if not math.isfinite(args.seconds) or not 0 < args.seconds <= 60:
         parser.error("seconds must be finite and within 0..60")
@@ -134,18 +153,19 @@ def main() -> None:
             raise ValueError("Verified selector must be FF/FE before perturbation; reload verified context")
         physics_id = struct.unpack("<i", reader.read(args.pc + 0x9FCC, 4))[0]
         def build(log: int, original: int) -> bytes:
-            return perturb_shim(log, original, args.pc, physics_id, args.factor)
+            return perturb_shim(log, original, args.pc, physics_id, args.factor, args.baseline_bits)
         owner = struct.unpack("<Q", reader.read(args.pc + 0x4C0, 8))[0]
         controller = struct.unpack("<Q", reader.read(owner + 0x108, 8))[0]
         channel = struct.unpack("<Q", reader.read(controller + 0x2F0, 8))[0]
         print(json.dumps({"requested_movement_factor": args.factor,
                           "requested_animation_factor": args.animation_factor,
+                          "original_run_bits": hex(args.baseline_bits),
                           "monotonic_ns": time.monotonic_ns()}), flush=True)
         def rate_build(log: int, original: int) -> bytes:
             if args.animation_factor == 1.00:
                 return rate_shim(log, original)
             return animation_rate_shim(log, original, args.pc, physics_id, owner,
-                                       controller, channel, args.factor, args.animation_factor)
+                                       controller, channel, args.factor, args.animation_factor, args.baseline_bits)
         trace(reader, args.pid, args.pc, args.seconds, build, rate_build)
     finally:
         reader.close()

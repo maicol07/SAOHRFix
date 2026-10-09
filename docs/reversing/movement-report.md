@@ -1151,3 +1151,149 @@ Pad terminato tramite il finally di `virtual_pad.py`; limiter terminato con
 attivi, nessun file disabilitato, SKIFsvc32/SKIFsvc64 attivi e processo gioco
 assente. Self-check walk trace, run perturbation, virtual pad, FPS limiter e
 runtime reader passati; `git diff --check` passato. Nessun EXE/CPK modificato.
+
+### TRACE-246-01 — Anticamera, collisione riprodotta (2026-10-07)
+
+**Decisione: NOT READY. Unico blocker: COLLISION-SLOPE-01**, ascesa nel percorso
+ordinario lungo il muro inclinato. L'accesso alla zona e il corpo del trace 246
+sono ora verificati; questa sezione supera le conclusioni operative precedenti.
+
+#### Setup e limiti
+
+**CONFIRMED runtime:** Piazza del teletrasporto -> mappa Rustoria -> nodo castello
+con destinazione UI **Anticamera**, teletrasporto diretto sbloccato. Nessun bisogno
+di attraversare Arktarium 1F/2F o aprire una barriera. Ghost all'arrivo circa
+(36.129,1.849,178.775). Pad virtuale e letture XYZ raggiungono il muro/lastra
+inclinata vicino allo start storico. Quota iniziale 1.40; impulso **4.0 s**,
+pad **(-0.5,0.8660254)**, buttons=0, camera non manovrata; input consumato
+**(-65,-111)**, direzione world quasi -X con piccola +Z. Cap driver richiesto
+30 prima dell'avvio Steam, senza nuova verifica esterna del render FPS;
+poll dt ~0.067 s. Nessuna scrittura di posizione, reset solo con input inverso.
+
+**Reset non bit-identici:** vanilla `100-4` parte da (-7.894,1.400,131.640);
+`125-2/3/4` da (-7.912/-7.958/-7.931,1.400,131.638/131.635/131.639).
+In questo sottoinsieme errore start X <=0.065 e Z <=0.006, stesso muro/input.
+Z resta circa 0.25 sopra lo storico 131.39. Le altre prove comparabili partono
+da X -8.10..-7.18, Z 131.535..131.640, salvo la prima baseline
+(-6.465,1.400,131.310). Le traiettorie reali divergono al contatto; non chiamarle
+identiche. Yaw/camera non letti in memoria: direzione/input documentano
+l'allineamento senza inventare un valore yaw esatto.
+
+#### Baseline corrente e esclusioni
+
+**CONFIRMED:** walk=0.0434300005, run=**0.1693770140**, bits **3E2D712B**,
+FF/FE, F8A6 e caller ordinario verificati. Rapporto ~1.01 rispetto alla baseline
+storica; causa del fattore aggiuntivo **UNKNOWN**. Non riscrive 3E2BB98D storico.
+`run_perturb.py --baseline-bits` accetta solo questi due valori osservati,
+default storico invariato; confronto esatto in entrambi gli shim, altri filtri
+invariati, valore originale moltiplicato. Self-check prima del live, nessun
+apprendimento automatico o allargamento del guard.
+
+Captures ignorati `.cache/trace246-rastoria-<factor>-<run>.jsonl`:
+
+- `100-1`: trace terminato prima dell'impulso, zero movimento, scartato.
+- `125-1`: richiesta 1.25/1.25 esclusa dal guard storico; parametro/rate vanilla,
+  non conta come prova Sprint effettiva.
+- `115-3`: start (-12.260,1.400,131.624) dopo l'evento precedente; osservazione
+  accessoria stabile, esclusa dalle ripetizioni comparabili.
+- `100-7`: cambio contesto, clip 100000/101152, request 1152, caller 1F54E4;
+  esclusa dalla baseline exploration/run. Il tentativo successivo `115-4` termina
+  senza output `logging` o cattura valida; stderr non conservato, non conta come test.
+
+#### Collisione e boundary
+
+| Move / animation | Prove comparabili | Ghost Ymax per prova | Call 1F625A | Valutazione |
+|---|---|---|---|---|
+| 1.00 / 1.00 | `100-2..6`, 5 | 1.5970, 1.5938, 1.5953, 1.5955, 1.5964 | 0 | Controlli stabili |
+| 1.10 / 1.10 | `110-1..3`, 3 | 1.6132, **11.6899**, 1.6132 | 0 | Ascesa ordinaria intermittente |
+| 1.15 / 1.15 | `115-1..2`, 2 | 1.6240, **14.2178** | 0 | Ascesa ordinaria, +12.82 Y |
+| 1.20 / 1.20 | `120-1..3`, 3 | 1.6343, 1.6319, 1.6356 | 0 | Stabile nella piccola serie, soglia sicura non provata |
+| 1.25 / 1.25 | `125-2..4`, 3 | 1.8493, **4.7948**, **3.1188** | 0, 0, **11** | Ascesa ordinaria e azione speciale distinte |
+
+Run effettivo: 1.10=0.186314717, 1.15=0.194783568, 1.20=0.203252420,
+1.25=0.211721271; playback run perturbato al rispettivo fattore.
+Detector `suspect_vertical`: 56 campioni `110-2`, 132 `115-2`, 25 `125-3`,
+8 `125-4`; zero nei controlli vanilla validi. Poll sequenziali, non frame atomici;
+conteggio dei campioni sospetti non è frequenza degli eventi CPU.
+Grande +12 Y riprodotto come fenomeno, **non** nelle condizioni esatte del vecchio
+test 1.25. Risposta non monotona: tre prove 1.20 stabili non danno un default sicuro.
+Movement e animation variano insieme in questa serie: non separa l'effetto dei
+due hook, né esclude un contributo del playback alla submission ordinaria.
+
+**CONFIRMED runtime:** `110-2`, `115-2`, `125-3` ascendono con caller
+**1E993F**, clip/request **122**, A025=0, A021=0, A01E=1, A03C=0, A04C=1,
+9FDC=50, 9FF8=0, zero call speciali. 9F58 negativo in `110-2` (-0.432666)
+e `115-2` (-0.154300), ma A025 resta zero. Ghost/player Y aumentano insieme,
+offset ~1.40: non è solo un artefatto del campo player. Target X ordinario ~100
+unità oltre il player non prova da solo attraversamento della geometria.
+
+**HIGH CONFIDENCE:** l'ascesa segue la superficie inclinata. Nei campioni in
+salita con 2<Y<13 e deltaX negativo, mediana deltaY/-deltaX:
+`110-2` **3.656299** (41), `115-2` **3.656283** (36), `125-3` **3.656224**
+(30). La normale della query speciale nello stesso muro dà Nx/Ny=**3.656245**.
+In 8/41 campioni `110-2` e 14/30 `125-3`, displacement KCC richiesto Y negativo
+e delta ghost positivo sono compatibili con correzione verticale al contatto,
+con il limite temporale del polling. Step fields 0/0.035/0.02, contact flags
+1/0/1/0, ground fields 0/0; `on_ground` diagnostico non prova un appoggio valido.
+**UNKNOWN:** quale ramo KCC/aggiornamento target consenta la risalita;
+non dimostrati tunneling o penetration recovery.
+
+#### Firma 1F625A/246
+
+**CONFIRMED runtime `125-4`:** 11 call e 11 record osservati, parent caller
+**1F5271**, setter return **1F625A**, callsite statico 1F6254. Primo record:
+
+| Campo | Valore |
+|---|---|
+| A025 / A021 / A01E / A03C / A04C nel poll associato | 1 / 0 / 1 / 0 / 1 |
+| 9F58 al setter | -0.031180203 |
+| 9FDC / 9FF8 | 50 / 0; 9FF8 fino a 16.025543 nei record osservati |
+| Surface query Y | 1.773118377 |
+| Surface normal | (0.964573264,0.263815254,0.000096804) |
+| XMM11 angolare | 0.266975462 rad, inferiore a 50*pi/180 |
+| XMM2 originale | **0.5 in tutti gli 11 record** |
+| Requested world al setter | (-19.410387,1.773118,131.547394) |
+| Target nel poll associato | (-19.042295,1.773118,131.547424) |
+| Ghost / player Y nel poll associato | 2.866334 / 1.466334 |
+| KCC displacement associato | (-0.550432,0.717651,0.003372) |
+| Request / clip / downstream rate associati | **246 / 246 / 1.0** |
+
+I 21 campioni con clip 246 hanno rate 1.0. Entrambe le perturbazioni escludono
+questo percorso. Alcuni record speciali si associano a poll ancora ordinari/rate
+1.25: logger/poll non atomici, non prova di modifica della clip 246.
+Corpo del trace ora live-tested, oltre al percorso di esclusione già verificato.
+
+**Classificazione:** 1F625A/246 è **CONFIRMED percorso originale**, query e
+condizione angolare coerenti con l'analisi statica, parametro preservato.
+Sprint ne favorisce l'ingresso: **PROBABLE**, 1/3 prove effettive 1.25 contro
+0/5 controlli vanilla; reset e numerosità non danno causalità definitiva.
+Amplificazione diretta del parametro/playback esclusa nei dati osservati.
+Le tre grandi ascese ordinarie sono **non correlate all'esecuzione di 246**:
+non si può chiudere ogni collision regression come normale special movement.
+
+#### Animation relationship e readiness
+
+Case B e il precedente proxy distanza/fase favorevole a 1.25/1.25 rimangono
+validi nel loro contesto. Nuova verifica dell'esclusione live di clip 246;
+nessuna nuova misura foot sliding, cadence o contatto piede/terreno sul piano.
+Il muro non è una lane di calibrazione del passo. Nessun bone RE o video nuovo.
+Nessuna coppia promossa a default. Sanity di altre geometrie, town/combat e
+lifecycle subordinati al gate collisione fallito, non blocker aggiuntivi.
+
+**NOT READY — unico prossimo blocker, COLLISION-SLOPE-01:** localizzare la
+correzione verticale del percorso ordinario sulla lastra tramite pre/post KCC
+sincronizzati al contatto, separando movement-only dal pairing animato, e
+dimostrare un comportamento Sprint che non risalga
+il muro nelle ripetizioni comparate. Riutilizzare area/input/serie; abbassare
+soltanto il multiplier o attribuire tutto a 246 non risolve i dati osservati.
+Nessuna specifica/default di release pronta. Futuro input: Left Shift / L3,
+Hold/Toggle configurabile, non implementato. Nessuna fase Audio o altra fase.
+
+**CONFIRMED cleanup:** tutte le 20 catture concluse riportano `restored`.
+Vptr letti prima di chiudere: player 14080AE08, KCC 140879BD0, channel 140822AE8.
+Gioco poi assente, pagine diagnostiche terminate; pad terminato tramite finally
+(reset/update, disconnect); limiter tramite finally, `restored, fps:null`.
+d3d11.dll e SAO HR Ultrawide.asi attivi, nessun file disabilitato,
+SKIFsvc32/SKIFsvc64 attivi come all'inizio. Nessuna patch EXE/CPK,
+installazione driver o capture grezzo versionato. Self-check run perturbation e
+walk trace, py_compile del tool modificato e `git diff --check` passati.
