@@ -3,11 +3,12 @@
 **Aggiornamento:** le sezioni fino a “Baseline readiness” conservano il report
 manuale del commit `ddca350`. Le conclusioni correnti, che sostituiscono le sue
 incertezze e lo stato finale storico, iniziano da “Analog input path”.
-La decisione finale corrente è in **“COLLISION-SLOPE-03 — 2026-10-09”**:
-**NOT READY**. Il recovery cached è osservato direttamente. Anche il ritorno
-al parametro vanilla prima della produzione lascia una salita; il gate
-basato su `+C0` inoltre rilascia durante l'ascesa. Serve riconsiderare il punto
-di applicazione dello Sprint rispetto al target terreno e al primo contatto.
+La decisione finale corrente è in **“COLLISION-SLOPE-04 — 2026-10-10”**:
+**NOT READY**. Gli store della Y terreno sono identificati direttamente.
+Il candidato vanilla-first con extra fisico separato evita la grande ascesa
+nelle due prove, ma la seconda supera la fascia verticale dei controlli.
+Resta un blocker: equivalenza e stabilità del primo contatto vanilla negli
+update successivi agli extra. La causalità del nuovo picco non è dimostrata.
 
 Data: 1 ottobre 2026. Build Steam PC, SHA-256
 `1923f0d8d2cad559d6ad6e001af54ea5ea5aa70171323f42d4e1fa3d63699e43`.
@@ -1821,3 +1822,186 @@ separati strumenti e risultati nuovi; nessuna perdita dello staging precedente.
 Self-check di `pre_projection`, `slope_trace`, `run_perturb`, `walk_trace`,
 py_compile dei quattro tool, parse dei due TOML research e `git diff --check`
 passati. SHA-256 EXE invariata rispetto alla build in apertura del report.
+
+### COLLISION-SLOPE-04 — 2026-10-10
+
+**Decisione: NOT READY.** Il singolo blocker successivo è verificare
+**equivalenza e stabilità del primo contatto vanilla dopo gli extra separati**.
+Il candidato A+C non è approvato: nella seconda prova la quota massima supera
+entrambi i controlli. Questo respinge il gate di validazione, ma non dimostra
+che il picco sia causato dallo Sprint: start e intervalli nativi non sono identici.
+Nessun nuovo latch, patch della collision response, Sprint production o Audio.
+
+#### Trace e store esatti
+
+`tools/terrain_trace.py` usa copie private dei metodi della sola istanza player,
+chiamate originali preservate, ring bounded da 8192 record da 512 byte e ripristino
+dei vptr tramite `walk_trace`. Registra producer/sequence/thread, parametro
+originale/effettivo, current, integration, requested/target prima e dopo,
+segmento query effettivo, hit Y/normal/index e submission/ghost del passo fisico.
+Le sequenze ordinano gli eventi; non rappresentano frame atomici cross-thread.
+
+**CONFIRMED static + runtime:**
+
+- `+168 -> 20B2A0 -> 1EAE70 -> 1F69B0` produce `+9DF0`.
+- `+170 -> 259430 -> 1F5240`: `1F5250` copia integration in `+9E10`,
+  poi chiama virtual `+178 -> 1F5B30` e `+180 -> 1EA4E0`.
+- `1F5CC0` chiama la query primaria `31EE00`; `1F5D2D` è il fallback
+  condizionato al fallimento. `31EED9 -> 6CB920` interroga il segmento verticale:
+  start Y = input Y + altezza (osservata 1.2), end Y = input Y - 1000.
+  Engine index negativo significa fallimento; `31EF61` ne deriva il bool.
+- **`1F5E15`** scrive il target `+9E20` usando la quota restituita dalla query.
+- Nel ramo ordinario osservato, **`1F663D -> 164840`**, componente 1 del
+  descriptor `+9E10`, passa la quota in XMM1; **`16488F`** scrive requested.Y.
+
+Il trace vede direttamente il caller comune `31EEDE` e l'engine index,
+non distingue ogni evento primario/fallback né registra separatamente il bool
+finale di `31EE00`. Il punto XZ della query può differire da `+9E10`
+(errore massimo osservato nel controllo circa 0.4508): usare il segmento
+registrato, non ricostruirlo assumendo uguaglianza. Current gameplay è alla
+quota dei piedi; ghost center è circa 1.4 unità sopra, non la stessa Y.
+
+**CONFIRMED writer, cattura `terrain-legacy-125-02`, producer 6:**
+
+| Evento | Valore osservato |
+|---|---|
+| Parametro originale / effettivo | 0.169377014 (`3E2D712B`) / 0.211721271 |
+| Current e integration Y | 0.281662345; integration non aumenta Y |
+| Query start | (-19.023054, 1.48166239, 131.646225) |
+| Query end | (-19.023054, -999.718323, 131.646225) |
+| Hit Y / engine index | 0.356889367 / 1 |
+| Surface normal | (0.964573264, 0.263815254, 0.000096804) |
+| seq1120, `1F5E15` | target.Y 0.281662345 -> 0.356889367 |
+| seq1121, `1F663D` | requested.Y 0.281662345 -> 0.356889367; arg identico alla hit Y |
+| Branch flags | A025=0, A04C=1, A01E=1, A021=0, A047=0 |
+| seq1122, KCC requested | (-0.574808061, +0.051066637, +0.003540039, 0) |
+| seq1123, ghost Y | 1.681662440 -> 1.875444174 |
+
+La Y positiva entra nel KCC già prodotta dal gameplay/query. La cattura arriva
+poi a Y=14.21778965. **Non è un nuovo A/B causale:** parte da contatto già
+stabilizzato, ghost (-18.328770, 1.40742218, 131.623627), anziché dallo start
+della lane. Serve solo a chiudere l'origine esatta della Y. La precedente
+`terrain-legacy-125-01` è esclusa: nessun input/setter nella finestra, impulso
+arrivato dopo il trace. Nessuna nuova conclusione movement-vs-animation.
+
+#### Valutazione delle architetture
+
+| Candidato | Esito e limite |
+|---|---|
+| A: extra physical substep | Fattibile come diagnostica bounded: primo wrapper originale, poi secondo passo solo fisico; sync del current osservato. Side effect fisici duplicati e lifecycle non validati. |
+| B: extra dopo query, prima wrapper | Preserva il punto query ma non il primo contatto: un unico displacement più lungo conserva il rischio di proiezione già noto. Non adottato. |
+| C: capsule preflight dell'extra | Provato insieme ad A usando sweep nativo e shape KCC, non un raycast puntiforme. Il preflight non sostituisce una nuova query terreno per la pendenza. |
+| D: spatial substepping | A realizza vanilla + restante 0.25 a livello fisico, senza duplicare il gameplay completo. Non dimostra ancora equivalenza della storia di contatto o handling delle rampe. |
+
+Non tutte le varianti sono impraticabili; A+C ha risultati parziali misurabili.
+Non è quindi stata aperta una ricerca aggiuntiva sui metadata Phyre.
+
+#### Preservazione e candidato A+C
+
+Prima dell'extra è stata eseguita `terrain-preserve-01`, con Sprint richiesto
+ma parametro effettivo sempre originale: walk 0.04343000054, run 0.169377014.
+Nessuna moltiplicazione prima di integration/query. **CONFIRMED** uguaglianza
+del parametro nel medesimo producer; **HIGH CONFIDENCE static** conservazione
+del primo query path a parità di stato. Le due esecuzioni da start diversi
+non sono un replay bit-identico: non esiste una misura runtime accoppiata
+`query_Sprint - query_vanilla = 0` dallo stesso identico stato.
+
+Il candidato `--extra` conserva questa produzione vanilla e procede così:
+
+1. Salva il requested KCC `+50`, esegue il primo **`58D340` originale**.
+2. Richiede walk-direction `+E3=1` all'ingresso, player verificato,
+   F8A6=1/F8AD=0, selector FF/FE e parametro originale `3E2D712B`.
+   Per questa diagnostica, `abs(requested.Y) <= 0.001` e primo displacement
+   X/Z compatibile con requested entro 0.0002 per componente.
+3. Costruisce un nuovo extra XZ = 0.25 del contributo vanilla, Y/W=0.
+   Non divide la Y originale e non modifica target, quota query o ghost.
+4. Da ghost dopo il primo passo, **`6F8890`** esegue capsule sweep con
+   shape KCC `+18`, callback nativa `8C55C0/729CB0`, self e mask/group nativi.
+   Margin temporaneo come forward sweep nativo, ripristinato subito dopo.
+5. Solo senza hit object invia l'extra tramite **`72A5F0`** ed esegue
+   un secondo **`58D340` originale con dt=0**. Il wrapper azzera E3/E4;
+   niente extra residuo in idle. Il KCC continua a risolvere entrambi i passi.
+
+Il secondo passo esegue ancora preStep/stepUp/stepDown e sincronizzazione
+fisica; non richiama l'intero player update né esplicitamente richieste
+animazione, timer e script. **UNKNOWN** assenza di ogni side effect duplicato.
+Gli extra accettati dimostrano il ramo no-hit; hit fraction/normal e motivi
+di rifiuto del preflight non sono registrati direttamente. Nessuna nuova
+strumentazione recovery o contatore completo delle special action: le
+esclusioni originali restano, ma questi metrici non sono una validazione nuova.
+
+Animation usa il getter già verificato della sola channel player/clip 122:
+1.25 solo con extra accettato, altrimenti vanilla. Un flag DWORD dello stesso
+update è inizialmente vanilla, reset dal primo passo attivo e abilitato dal
+no-hit; non è un latch cached contact. `terrain-extra-02` osserva rate
+1 -> 1 e 1 -> 1.25; il rate nativo 2 resta 2. Poll non atomico, possibili
+sfasamenti worker/lifecycle non validati per produzione. Il primo extra trace
+non raccoglieva questi poll: corretto `walk_trace` per poll indipendente dal
+logger submission, sostituito in questa diagnostica.
+
+#### Prove Anticamera
+
+Pad virtuale, lane storica verificata visivamente, camera non manovrata.
+Input (-0.5, 0.8660254), buttons=0, 4.0 s; away usa l'inverso.
+Reset bounded tramite pad: start non identici, nessuna scrittura posizione.
+Target NVIDIA 30 impostato prima del riavvio; FPS effettivi non misurati
+esternamente in questa sessione. Nessuna nuova conclusione FPS.
+
+| Cattura | Ghost start XYZ | Ghost finale XYZ | Max ghost Y | Extra accettati |
+|---|---|---|---:|---:|
+| terrain-vanilla-01 | (-7.760714, 1.400000, 131.441330) | (-18.304810, 1.407419, 131.623611) | 1.596209049 | 0 |
+| terrain-preserve-01 | (-8.475770, 1.400000, 131.635651) | (-18.322227, 1.407422, 131.623596) | 1.595162511 | 0 |
+| terrain-extra-01 | (-8.552626, 1.400000, 131.630219) | (-18.246811, 1.407437, 131.623596) | 1.595115423 | 7 |
+| terrain-extra-02 | (-8.418660, 1.400000, 131.637726) | (-18.427444, 1.407436, 131.623642) | **1.704176545** | 8 |
+| terrain-extra-away-flat-01 | (-18.427444, 1.407436, 131.623642) | (12.037760, 1.474658, 131.000793) | 1.474796653 | 20 |
+| terrain-vanilla-02 | (-7.967122, 1.400000, 131.644440) | (-18.473705, 1.407421, 131.623611) | 1.594958544 | 0 |
+
+**CONFIRMED flat extra:** extra XZ / primo displacement vanilla =
+0.2499992977..0.2500003559; extra dY=0. Current gameplay X successivo coincide
+con ghost X finale precedente (errore massimo 0 nella cattura away).
+Away riprende extra senza sticky suppression, inclusi producer 19..28.
+Quando requested.Y supera il filtro flat, resta vanilla: non è un test
+superato dello Sprint su slope, né una misura di velocità media 1.25 sulla lane.
+
+**Seconda prova, picco producer 57, seq1854/1855:** primo passo originale,
+**nessun extra** in quel producer. Ghost prima
+(-18.2563763, 1.592821121, 131.623611), dopo
+(-18.2868328, 1.704176545, 131.623642). Parametro vanilla 0.169377014;
+integration X -18.256376 -> -20.8814468, Y 0.192821025 invariata.
+Query hit Y=0.00722324848, normal=(0, 0.999913, 0.013187).
+KCC requested=(-0.590133786, -0.041723691, 0.003631592, 0).
+Tutti gli otto extra della prova hanno dY=0, max extra Y=1.404827.
+
+Il picco avviene quindi nel primo step nativo dopo gli extra precedenti,
+non nel loro substep. La contribution integrata X di circa 2.625 è maggiore
+del valore usuale circa 0.677: intervallo/stato nativo non equivalente.
+Il controllo successivo resta sotto 1.595; la differenza massima circa 0.108
+non chiude il gate, ma non consente attribuzione causale certa allo Sprint.
+**Non dichiarare eliminata la collision regression.** Nessun ulteriore
+candidato o sanity subordinato dopo questo esito.
+
+#### Gate, limiti e cleanup
+
+Origine query-fed della Y: **CLOSED**. Extra separato e sync sul piano:
+**CONFIRMED nel contesto diagnostico**. Primo contatto dopo storia accelerata:
+**UNKNOWN, unico blocker successivo**. `COLLISION-SLOPE CLOSED` non raggiunto;
+**NOT READY FOR SPRINT IMPLEMENTATION**. Serve un confronto con stato e
+intervalli comparabili per distinguere il contatto vanilla dal cambiamento
+di storia introdotto dagli extra; non un altro latch o correzione della Y.
+
+Normal slope, stairs, oblique/parallel wall, start/stop, town/combat e lifecycle
+restano rinviati. Nessuna specifica production, default Sprint o config READY.
+Le catture `.cache/terrain-*.jsonl` sono locali/gitignored; il commit contiene
+solo sorgenti diagnostici e documentazione, nessun byte proprietario.
+
+**CONFIRMED cleanup:** vptr originali player/KCC/channel
+`14080AE08 / 140879BD0 / 140822AE8` verificati prima dell'uscita; gioco chiuso,
+pad neutral/reset/disconnect, limiter restored `fps:null`, due mod locali
+attive come prima, SKIFsvc32/64 riattivati. Pagine private eliminate con il
+processo; nessuna patch EXE/CPK o installazione driver.
+
+Self-check di `terrain_trace` e `walk_trace`, py_compile dei due tool,
+parse dei due TOML research e `git diff --check` passati. SHA-256 EXE
+invariata: `1923f0d8d2cad559d6ad6e001af54ea5ea5aa70171323f42d4e1fa3d63699e43`.
+Il nuovo trace non raccoglie direttamente ogni native walkable predicate o
+recovery event: nessuna conclusione aggiuntiva su quei rami oltre SLOPE-03.

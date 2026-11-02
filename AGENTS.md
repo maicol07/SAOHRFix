@@ -61,9 +61,14 @@ Producer input/integrated Y stays current while gameplay target/request Y
 changes before KCC; surface preparation 1F5B30 is the high-confidence source.
 Cached suppression before 1E9980 fails: initial recovery calls read vanilla
 parameter but still ascend, then C0=0 releases the gate and boost resumes.
-The sole next blocker is preserving the vanilla terrain-query/first-contact
-path before accelerated arrival creates divergent state. Stop after failure;
-no Sprint implementation yet. See SLOPE-03 for exact captures and exclusions.
+COLLISION-SLOPE-04 directly identifies query-fed target Y store 1F5E15 and
+requested Y call 1F663D -> component store 16488F. Vanilla-first A+C keeps
+the original locomotion parameter, then optionally adds a native capsule-
+preflighted physical substep; flat extra is 25%, with owner sync observed.
+Two trials avoid the large ascent, but the second reaches Y=1.704 versus
+vanilla controls near 1.595, during the first native step with no extra.
+Causality is unresolved; the sole blocker is first-contact equivalence and
+stability after earlier extras. No production Sprint; see SLOPE-04 for limits.
 SKIF native Stop/Start resolved its inaccessible UI on 2026-10-02. The user
 identified the historical lane as Anticamera delle Grandi Pianure Rastoria.
 Direct teleport to Anticamera is verified from the Rustoria regional map;

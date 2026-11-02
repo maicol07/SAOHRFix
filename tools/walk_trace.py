@@ -163,7 +163,8 @@ def shim(log: int, original: int, pc: int, production: int, animation: int) -> b
 def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
           production_builder: Callable[[int, int], bytes],
           rate_builder: Callable[[int, int], bytes],
-          kcc_entries: dict[int, int] | None = None) -> None:
+          kcc_entries: dict[int, int] | None = None,
+          pc_entries: dict[int, int] | None = None) -> None:
     identity = resolve(reader, pc)
     _, wrapper, kcc = identity
     ghost = struct.unpack("<Q", reader.read(kcc + 0x10, 8))[0]
@@ -230,13 +231,17 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
         vtable = bytearray(reader.read(original_vptr - 8, 0x108))
         struct.pack_into("<Q", vtable, 8 + 0x18, entry)
         for slot, target in (kcc_entries or {}).items():
-            if slot not in (0x08, 0x38, 0x40, 0x60):
+            if slot not in (0x08, 0x18, 0x38, 0x40, 0x60):
                 raise ValueError("Unsupported physics diagnostic slot")
             struct.pack_into("<Q", vtable, 8 + slot, target)
         write(page, bytes(vtable))
         pc_copy = bytearray(reader.read(pc_vptr - 8, 0x998))
         struct.pack_into("<Q", pc_copy, 8 + 0x3E8, producer_entry)
         struct.pack_into("<Q", pc_copy, 8 + 0x460, animation_entry)
+        for slot, target in (pc_entries or {}).items():
+            if slot not in (0x168, 0x170, 0x178, 0x180):
+                raise ValueError("Unsupported player terrain diagnostic slot")
+            struct.pack_into("<Q", pc_copy, 8 + slot, target)
         write(page + 0x300, bytes(pc_copy))
         channel_copy = bytearray(reader.read(channel_vptr - 8, 0x1F0))
         struct.pack_into("<Q", channel_copy, 8 + 0x30, rate_entry)
@@ -368,14 +373,14 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
                                            "requested_world_at_setter": struct.unpack_from("<4f", special, 96),
                                            "poll_context": records[-1] if records else None})
                     previous_special = special_sequence
-                rate_record = reader.read(rate_log, 48)
-                rate_sequence, rate_caller, rate_thread, rate_instance = struct.unpack_from("<4Q", rate_record)
-                if rate_sequence and not rate_sequence % 2 and rate_sequence == struct.unpack("<Q", reader.read(rate_log, 8))[0]:
-                    if rate_instance != channel:
-                        raise ValueError("Rate shim logged another animation channel")
-                    returned = struct.unpack_from("<f", rate_record, 32)[0]
-                    field_rate = struct.unpack_from("<f", rate_record, 40)[0]
-                    rate_events[(rate_caller - BASE, rate_thread, field_rate, returned)] += 1
+            rate_record = reader.read(rate_log, 48)
+            rate_sequence, rate_caller, rate_thread, rate_instance = struct.unpack_from("<4Q", rate_record)
+            if rate_sequence and not rate_sequence % 2 and rate_sequence == struct.unpack("<Q", reader.read(rate_log, 8))[0]:
+                if rate_instance != channel:
+                    raise ValueError("Rate shim logged another animation channel")
+                returned = struct.unpack_from("<f", rate_record, 32)[0]
+                field_rate = struct.unpack_from("<f", rate_record, 40)[0]
+                rate_events[(rate_caller - BASE, rate_thread, field_rate, returned)] += 1
             time.sleep(0.01)
         moving = [r for r in records if math.hypot(*r["vec"][:3]) > 1e-5]
         states = {(tuple(r["ring_latest_axes"]), r["F8A6"], r["F8AD"], r["speed"]) for r in moving}
