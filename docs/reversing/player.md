@@ -1,415 +1,275 @@
-# Player / movement
+# Player and movement
 
-Aggiornamento 9 ottobre 2026, **CONFIRMED static/runtime**:
-KCC player vtable `879BD0`, update +08 `58D340`, preStep +38 `72A160`,
-playerStep +40 `729EF0`, callback +60 `5875A0`. Forward `72A9D0` chiama
-la proiezione `72B3C0` a `72ACC8`, poi callback return `72ADDB`.
-Con normale unitaria e fattore 1, target-current viene proiettato come
-`v-dot(v,n)*n`; target Y store `72B5EA`, ghost publication `72A139`.
-Trace sincronizzato conferma richiesta Y negativa convertita in delta ghost
-positivo sulla lastra Anticamera; preStep recovery e callback non spostano
-le posizioni nei trace di grande ascesa. Movement-only 1.15 raggiunge Y=14.218.
-Il fallback dopo contatto fallisce: **NOT READY**, prevenzione prima della
-submission ascendente ancora da verificare. Dettagli e limiti nel report.
+This English archival edition preserves the initial player/controller findings
+and manual captures. It is historical evidence, not the final readiness decision.
+Later virtual-pad, collision and lifecycle results are in movement-report.md;
+the unfinished native implementation is in ../sprint-01.md. The project is
+discontinued. Older statements that no hook or commit existed describe their
+checkpoint, not the final repository.
 
-Aggiornamento 1 ottobre 2026: stato corrente in
-[movement-report.md](movement-report.md). Le catture manuali e le liste di gap
-qui sotto sono il baseline preservato nel commit `ddca350`; alcune lacune sono
-state successivamente risolte con controller virtuale e log diagnostici reversibili.
-Non interpretare le vecchie indicazioni "nessun hook"/"nessun commit" come stato corrente.
+Build SHA-256 `1923f0d8…9e43`, base `0x140000000`, stripped relocations. Evidence
+is VANILLA STATIC unless otherwise labeled.
 
-Build: `sha256 1923f0d8…9e43`. RVA relative a `0x140000000` (modulo senza relocation: VA fisso).
-Classificazione evidenze: **VANILLA STATIC** salvo diversa indicazione. Prima cattura runtime
-MOVEMENT-01 eseguita senza debugger; dettagli e limiti nella sezione seguente.
+## October 9 collision checkpoint, superseded later
 
-## MOVEMENT-01: risalita e prima cattura runtime
+CONFIRMED static/runtime: player KCC vtable 879BD0, update+08 58D340,
+preStep+38 72A160, playerStep+40 729EF0, callback+60 5875A0. Forward 72A9D0
+calls projection 72B3C0 at 72ACC8, then callback return 72ADDB. For a unit
+normal and factor 1, projection is v-dot(v,n)*n; target-Y store 72B5EA and ghost
+publication 72A139. Synchronized Anticamera traces show negative requested Y
+becoming positive actual ghost delta. Large-ascent traces did not move position
+in the preStep recovery/contact callback. Movement-only 1.15 reached Y=14.218;
+post-contact fallback failed. This checkpoint was NOT READY; later A+C work
+supersedes that architecture and decision.
 
-Build SHA-256 completa riverificata. Processo avviato da Steam dopo `mods.ps1 off`
-e arresto dei due servizi Special K tramite SKIF. Moduli D3D11/DXGI caricati da
-`C:\Windows\System32`; nessun modulo Special K/ReShade/ASI rilevato nella verifica.
-Sole letture `OpenProcess(0x410)` / `ReadProcessMemory`, nessun attach, breakpoint,
-scrittura nel processo o patch all'eseguibile. Salvataggio esistente caricato in field,
-Kirito livello 18, tre partner presenti. Nessuna prova in combattimento o città.
+## MOVEMENT-01, initial runtime capture
 
-### Relazione fra player e controller
+The complete EXE hash was rechecked. Steam launch followed mods.ps1 off and
+SKIF stopping both global Special K services. D3D11/DXGI modules came from
+System32; no Special K/ReShade/ASI module was detected. Inspection used only
+OpenProcess(0x410)/ReadProcessMemory, without debugger attach, breakpoints,
+process writes or permanent EXE patches. An existing field save was loaded,
+Kirito level 18, with three partners. Town/combat were not tested.
 
-**CONFIRMED, VANILLA RUNTIME** per questa sessione, PID `37196`:
+### Player/controller relationship
 
-| Oggetto | VA della sessione | Evidenza |
+CONFIRMED VANILLA RUNTIME, PID 37196. All heap VAs below are session-only.
+
+| Object | Session VA/value | Evidence |
 |---|---|---|
-| `CChrPc` | `0x21390890` | vptr `0x14080AE08`, posizioni cambiano con il movimento fisico richiesto all'utente |
-| ID fisico | `10` | `int32[CChrPc+0x9FCC]`; al titolo era `-1` |
-| Record fisico | `0x20CB9D50` | ID nel primo dword; trovato nell'array del manager |
-| Wrapper Phyre | `0x20CB9D60` | record `+0x10` |
-| KCC del player | `0x80DF3CF0` | `[wrapper+0x148]`, vptr `0x140879BD0` |
-| Backlink | `0x20CB9D60` | `[KCC+0xF0] == wrapper` |
+| CChrPc | 21390890 | vptr 14080AE08; position follows requested physical movement |
+| Physics ID | 10 | int32 at CChrPc+9FCC; -1 at title |
+| Physics record | 20CB9D50 | ID in first dword, member of manager array |
+| Phyre wrapper | 20CB9D60 | Record+10 |
+| Player KCC | 80DF3CF0 | wrapper+148, vptr 140879BD0 |
+| Backlink | 20CB9D60 | KCC+F0 equals wrapper |
 
-Questi VA heap **non sono indirizzi persistenti**. Ricostruire la relazione a ogni
-avvio/caricamento. Non basta cercare un vptr e assumere che l'oggetto sia attivo.
+Reacquire these associations after launch/load; a matching vptr alone does not
+establish an active object. Static lookup 6CBEB0 reads g=[image+B148B8],
+manager=[g], entries=[manager+18], count=int32[manager+134]. Each non-null
+record begins with an ID. The getter returns the array slot, not the record;
+dereference the slot before using record+10.
 
-**CONFIRMED, VANILLA STATIC**, lookup dell'ID in `0x6CBEB0`:
-`g = [image+0xB148B8]`, `manager = [g]`, `entries = [manager+0x18]`,
-`count = int32[manager+0x134]`. Ogni elemento non nullo è un record il cui primo
-dword è l'ID. Il getter restituisce lo **slot dell'array**, non il record.
-Il tool dereferenzia lo slot prima di usare `record+0x10`.
-
-### Catena statica verificata
+### Verified static submission chain
 
 ```text
-CChrPc vtable +0x180 = 0x1EA4E0
-  vtable +0x548 -> 0x1E4BC0 -> current position +0x9DE0
-  vtable +0x550 -> 0x1E4B40 -> requested position +0x9E10
-  0x1EAE27 -> 0x320310(physics ID, scalar 60.0, current, requested, extra scalar)
-    0x32037D -> 0x6CBEB0 -> matching physics record
-    0x3203C8..0x3203CC: requested - current
-    0x3204F4: record+0x104 = scalar argument
-    0x320500: record+0x50 = displacement, potentially adjusted by a branch
-    equivalently: wrapper+0xF4 = scalar; wrapper+0x40 = displacement
-
-0x6CC090 -> 0x6CC13C -> 0x58CF40(wrapper, scalar, optional transform)
-  0x58D2A2..0x58D2D2: KCC+0x100 = transformed displacement * wrapper+0xF4
-  0x58D2E2..0x58D314: argument vector = (KCC+0x100).xyz * scalar argument
-  0x58D31C: virtual slot +0x18 -> 0x72A5F0 setWalkDirection
-  expected return address at Bullet entry: image+0x58D31F
+CChrPc vtable+180 = 1EA4E0
+  +548 -> 1E4BC0 -> current +9DE0
+  +550 -> 1E4B40 -> requested +9E10
+  1EAE27 -> 320310(physics ID, 60.0, current, requested, extra scalar)
+    32037D -> 6CBEB0 -> matching physics record
+    3203C8..3203CC: requested-current
+    3204F4: record+104 = scalar argument = wrapper+F4
+    320500: record+50 = displacement = wrapper+40, branch may adjust it
+6CC090 -> 6CC13C -> 58CF40(wrapper, scalar, optional transform)
+  58D2A2..58D2D2: KCC+100 = transformed displacement * wrapper+F4
+  58D2E2..58D314: argument = (KCC+100).xyz * scalar
+  58D31C: virtual+18 -> 72A5F0 setWalkDirection
+  expected static return: image+58D31F
 ```
 
-**CONFIRMED** per istruzioni/slot/offset. **HIGH CONFIDENCE** come percorso della
-locomozione osservata, perché la relazione degli oggetti e il fattore scritto
-corrispondono al runtime. Stack, registri all'ingresso e thread ID **UNKNOWN**:
-nessun breakpoint è stato installato. Non presentare il return address statico
-come un return address catturato.
+Instructions/slots/offsets are CONFIRMED; their role in observed locomotion was
+initially HIGH CONFIDENCE. No entry registers/thread/stack were captured in that
+first read-only session. A static expected return is not runtime stack evidence.
 
-`0x1F5240` copia `+0x9DF0` in `+0x9E10`, poi chiama i virtuali `+0x178` e `+0x180`.
-`0x21A580` è un altro wrapper che termina con un tail-jump a `0x1EA4E0`.
-**CONFIRMED, VANILLA STATIC**: `0x1EAE70` copia current `+0x9DE0` in
-`+0x9DF0` a `0x1EAF33`, poi chiama `0x1F69B0` a `0x1EAF59`.
-Quest'ultima calcola target `+0x9E20` meno current, normalizza il delta e
-aggiunge a `+0x9DF0` il vettore scalato dal parametro di movimento integrato
-(`0x1F6EBD..0x1F6EC4`). `0x1F5240` trasferisce quindi questa posizione richiesta.
-Il percorso normale ha dunque un produttore statico individuato; la selezione
-runtime del percorso resta **HIGH CONFIDENCE**. Più routine scrivono la posizione,
-incluse `0x21AF90`, `0x235680`, `0x219090` e `0x22B560`.
+1F5240 copies +9DF0 to +9E10 and invokes +178/+180. 21A580 tail-jumps to
+1EA4E0. 1EAE70 copies current +9DE0 to +9DF0 at 1EAF33, then calls producer
+1F69B0 at 1EAF59. The producer normalizes target+9E20 minus current and adds
+the integrated movement vector at 1F6EBD..1F6EC4. Other position writers include
+21AF90, 235680, 219090 and 22B560.
 
-Correzione del blocco 3: `CChrPc vtable+0x28` contiene `0x1E4EB0`, un dispatcher
-verso `vtable+0x308`, che nel player restituisce una costante da `0x904F9C`.
-`0x1EF070`, la routine di creazione già individuata, è nello slot **+0x140**.
-Non confondere offset in byte e indici di slot.
+Correction: CChrPc vtable+28 is 1E4EB0, dispatching to +308, whose player
+implementation returns a constant from 904F9C. Creation routine 1EF070 is at
+byte offset +140. Do not confuse byte offsets with slot indexes.
 
-### Risultato della cattura fisica
+### Physical keyboard movement capture
 
-`tools/movement_probe.py 37196 0x21390890 60 physical_forward_idle`:
+Command: movement_probe.py 37196 0x21390890 60 physical_forward_idle.
 
-- 5.745 campioni in 60,005 s, letture non atomiche, intervallo richiesto 10 ms.
-- 228 campioni non nulli tra 35,885 e 38,258 s; 5.517 campioni nulli.
-- Il fattore `wrapper+0xF4` vale `60.0` nei 228 campioni mobili, `0.0` negli altri.
-- Magnitudine massima XYZ nel KCC `+0x50`: `0.084164735` unità per chiamata.
-- Posizione iniziale `(3.926004, -0.055167, 163.291428)`;
-  finale `(-9.570621, -0.213579, 155.499985)`.
-- ID, wrapper, KCC e backlink invariati fra inizio e fine. Riposo successivo
-  riconfermato con 96 campioni, vettore e fattore entrambi zero.
+- 5,745 non-atomic samples in 60.005 s; requested polling interval 10 ms.
+- 228 nonzero samples at 35.885..38.258 s, 5,517 zero samples.
+- wrapper+F4=60.0 in moving samples and 0.0 otherwise.
+- Maximum KCC+50 XYZ magnitude 0.084164735 units per call.
+- Start (3.926004,-0.055167,163.291428), end (-9.570621,-0.213579,155.499985).
+- ID/wrapper/KCC/backlink unchanged. A later 96-sample idle check had zero
+  displacement and scalar.
 
-**CONFIRMED**: il controller individuato segue il movimento del player e torna a
-zero dopo l'arresto. L'utente ha confermato l'uso della **tastiera**; questa cattura
-non misura lo stick. Gli impulsi `Return`/`Space`/`W` di Computer Use non avevano
-prodotto movimento misurabile; il mouse ha consentito titolo e caricamento.
-Le catture precedenti, iniziate dopo il movimento, sono solo baseline di riposo.
+CONFIRMED: the identified KCC follows the player and returns to zero at rest.
+The user identified this input as keyboard, not stick. Earlier Computer Use
+Return/Space/W pulses produced no measurable movement; mouse reached title/load.
+Captures that started after movement are idle baselines only.
 
-### Velocità e delta time ancora da verificare
+### Initial speed/timing analysis
 
-**PROBABLE**: `CChrPc+0x9F24` è un parametro di movimento. Getter `0x1E4EE0`;
-setter `0x1E9980` riceve un vettore in RDX, lo salva a `+0x9E20` e salva XMM2 a
-`+0x9F24`, XMM3 a `+0x9F2C`. Slot CChrPc/CChrBase `+0x3E8`;
-setter alternativo `0x1E9A90` nello slot `+0x3F0`.
-Il wrapper `0x231BB0` appartiene a CChrPartner, slot `+0x3E8`, e raggiunge
-il setter con un tail-jump. Non attribuirlo a uno slot oltre il termine della
-vtable CChrPc (primo elemento non-code a `+0x990`).
-Non chiamarlo ancora base/max speed. `0x1F69B0` e molte altre routine lo modificano.
-`0x1E2640` moltiplica questo campo per un valore letto da `0x274220()+0xE0`.
+The initial interpretation of +9F24 as a movement parameter was PROBABLE,
+not a proven base/max-speed name. Getter 1E4EE0 and setter 1E9980, virtual+3E8,
+store RDX vector at +9E20, XMM2 at +9F24 and XMM3 at +9F2C. Alternate setter
+1E9A90 is at +3F0. CChrPartner wrapper 231BB0 at +3E8 tail-jumps to the setter;
+it is not a CChrPc slot beyond that vtable's first non-code entry at +990.
+1F69B0 and other routines modify the parameter; 1E2640 multiplies it by
+274220()+E0.
 
-**CONFIRMED, VANILLA STATIC**: `0x208FD0` calcola un parametro di velocità
-partendo da `CChrPc+0x9F20`. Applica `+0x9F88` in un ramo e moltiplicatori
-da `0x274220()` secondo virtuale `+0x648` e byte `+0xF8A6` / `+0xF8AD`;
-passa poi da `0x1BAF30` e limita il risultato con una costante.
-Non assegnare ancora nomi combat/gait a questi flag.
-`0x205BC0` chiama questo getter e scrive `+0x9F24` a `0x206107`,
-`0x2064D9` e `0x20652D`; a `0x206369` passa il parametro al virtuale
-`+0x3E8` insieme alla posizione target. Il getter `0x274220` restituisce
-l'indirizzo della tabella `image+0xAEAB70`.
-Init `0x1FE6D0`, istruzioni `0x1FE9FB..0x1FEA03`: tabella `+0x28` →
-campo `+0x9F20`. Runtime tabella: `+0x28 == 0.043`, `+0x30 == 3.9`,
-`+0x34 == 3.9`, `+0x38 == 1.38`. La corrispondenza con la coppia di valori
-osservati 0.043/0.1677 è **HIGH CONFIDENCE**; verifica dei flag in movimento
-ancora da completare.
+CONFIRMED static: 208FD0 starts from +9F20, conditionally applies +9F88 and
+274220 table factors using virtual+648 and F8A6/F8AD, then 1BAF30 and a limit.
+205BC0 stores +9F24 at 206107/2064D9/20652D and passes it with target to
+virtual+3E8 at 206369. 274220 returns AEAB70. Initialization 1FE6D0,
+1FE9FB..1FEA03, copies table+28 to +9F20. Runtime table values were +28=.043,
++30=3.9, +34=3.9, +38=1.38. Their relation to .043/.1677 was HIGH CONFIDENCE.
+Initial combat/gait meanings of the flags were deliberately not assumed.
 
-In `0x1F69B0`, il getter `0x69B4C0` viene chiamato a `0x1F6ADF` e il risultato
-moltiplicato per `CChrPc+0x9FE8` a `0x1F6AE7`. Il parametro `+0x9F24` viene
-integrato con `+0x9F2C` e questo step prima di scalare il delta normalizzato.
-`0x69B4C0` restituisce `[0xA63240]`, oppure `[0xA63248] * 60.0` se
-`byte[0xC82FAC] == 1`. Lettura runtime in riposo: rispettivamente circa
-`0.529896`, `1.0`, `0`; `CChrPc+0x9FE8 == 1.0`.
-**CONFIRMED, VANILLA STATIC**: writer `0x69B430`, chiamato a `0x696143`
-dall'update principale. Riceve XMM0 dopo `cvtsd2ss` del valore restituito dal
-virtuale app `+0xD8`; salva il valore a `0xA63238` e il reciproco a `0xA6323C`
-(fallback `60.0` per zero). Scrive `0xA63240` come clamp del valore moltiplicato
-per `60.0`, fra minimo `[0xC82FA8]` e massimo `[0xA63244]`.
-Lettura runtime: input circa `0.0096343`, reciproco `103.7958`, minimo `0`,
-massimo `60`, step `0.578058`. **HIGH CONFIDENCE**: input in secondi e step
-in unità di frame a 60 Hz. Comportamento sotto diversi framerate **UNKNOWN**.
-Non moltiplicare nuovamente questo step per il dt in secondi.
+At 1F6ADF, producer 1F69B0 calls 69B4C0 and multiplies its return by +9FE8
+at 1F6AE7. Parameter +9F24 is integrated with +9F2C and this step before scaling
+the normalized direction. Getter 69B4C0 returns A63240, or A63248*60 if
+C82FAC==1. Initial idle readings were approximately .529896,1.0,0 respectively,
+with +9FE8=1.0.
 
-**CONFIRMED**: `0x1EAE11` legge `60.0` da RVA `0xA554E4`. Questo scalar entra in
-`0x320310`; a valle esiste un secondo prodotto per lo scalar di `0x58CF40`.
-**CONFIRMED, static**: `0x6CBD80` legge lo scalar `1/60` da `0x81FD40`,
-poi chiama `0x6CC090` a `0x6CBDA0`. Correzione del precedente indirizzo
-`0x820D40`, calcolato erroneamente. Il nuovo trace del KCC conferma il caller
-`0x58D31F` e il return del wrapper `0x6CC141`; dettagli nel report aggiornato.
+Writer 69B430 is called at 696143 after app vfunc+D8 and cvtsd2ss. It stores
+input A63238, reciprocal A6323C, fallback 60.0 for zero, and clamps input*60
+between C82FA8 and A63244 into A63240. Observed input .0096343, reciprocal
+103.7958, min 0, max 60, step .578058. Seconds input / 60-Hz frame units was
+HIGH CONFIDENCE; do not multiply by seconds dt again.
 
-MOVEMENT-01 ha identificato oggetti e catena candidata; resta aperta la verifica
-del caller effettivo. MOVEMENT-02 non è chiuso: le quattro prove manuali sono
-riportate sotto, ma asse reale, deadzone, soglie walk/run, confronto del dt a
-framerate diversi e differenze città/field/combat non sono stati misurati.
-Letture dei rapporti `|walk|/|KCC+0x100|` e `|KCC+0x100|/|wrapper+0x40|` sono
-disponibili nel probe, ma non sostituiscono una cattura sincronizzata dei parametri.
+1EAE11 reads 60.0 from A554E4 for 320310. The downstream wrapper scalar is
+1/60 from 81FD40, read by 6CBD80 before 6CC090 at 6CBDA0. Earlier 820D40 was
+an incorrect address. Later traces confirmed 58D31F and wrapper return 6CC141;
+see the movement report. Non-atomic vector ratios alone cannot replace that trace.
 
-### MOVEMENT-02: prove analogiche valide
+## MOVEMENT-02, initial valid manual analog captures
 
-Dopo ulteriore riavvio tramite "Gioca" dalla libreria Steam, l'utente conferma
-che il pad risponde. Catture precedenti con pad non operativo escluse.
-Nuova sessione: PID `62148`, CChrPc `0x21458890`, ID `10`, wrapper `0x20D81D60`,
-KCC `0x80DF3CF0`; vptr e backlink verificati. Percentuali approssimate manualmente,
-non misurate sull'asse di input; restano da ricostruire deadzone e soglie precise.
+After a further Steam Play restart the user confirmed a working controller.
+Earlier non-responsive captures are excluded. New PID 62148, CChrPc 21458890,
+physics ID 10, wrapper 20D81D60, KCC 80DF3CF0; vptr/backlink checked. Requested
+percentages were manually approximated and are not measured internal axes.
 
-| Stick richiesto | Osservazione utente | Campioni mobili | Mediana KCC XYZ | Mediana KCC XZ | Mediana pc+9F24 |
+| Requested stick | User-observed gait | Moving / total samples | Median KCC XYZ | Median KCC XZ | Median +9F24 |
 |---|---|---|---|---|---|
-| circa 25% | cammina | 294 / 5742 | 0.02150515 | 0.02148751 | 0.04300000 |
-| circa 50% | gait incerto | 929 / 5740 | 0.02199477 | 0.02197591 | 0.04300000 |
-| circa 75% | corre | 618 / 5746 | 0.02482157 | 0.02446686 | 0.04300000 |
-| 100% | corre | 345 / 5728 | 0.08078582 | 0.08061422 | 0.16770001 |
+| About 25% | Walk | 294 / 5742 | .02150515 | .02148751 | .04300000 |
+| About 50% | Unclear | 929 / 5740 | .02199477 | .02197591 | .04300000 |
+| About 75% | Run | 618 / 5746 | .02482157 | .02446686 | .04300000 |
+| 100% | Run | 345 / 5728 | .08078582 | .08061422 | .16770001 |
 
-25%: 60.0074 s totali, movimento rilevato fra 30.3916 e 34.7757 s.
-Posizione `(36.688747, 0.425074, 178.599976)` →
-`(30.100225, 0.398114, 174.825241)`. Fattore wrapper `60.0` nei 294 campioni
-mobili, zero negli altri. Rapporto mediano `|walk|/|KCC+0x100| = 0.01666666719`.
-**CONFIRMED, VANILLA RUNTIME** per valori/catena; **USER OBSERVATION** per gait.
-Le mediane dei vettori non sono velocità in unità/secondo: campionamento a 10 ms,
-letture non atomiche e dt variabile; non dedurre linearità da una sola percentuale.
+25%: 60.0074 s, moving at 30.3916..34.7757 s. Start
+(36.688747,.425074,178.599976), end (30.100225,.398114,174.825241).
+Wrapper scalar 60.0 in 294 moving samples, zero otherwise; median
+walk/velocity ratio .01666666719. Values/association are CONFIRMED runtime;
+gait is USER OBSERVATION. Vector medians are not speed in units/second.
 
-50%: 60.0010 s totali, movimento fra 34.9278 e 45.4557 s, più lungo dei 3 s
-richiesti. Posizione `(30.100225, 0.398114, 174.825241)` →
-`(-11.016597, -0.119314, 184.975510)`. Mediana pc+9F24 identica alla prova 25%;
-**PROBABLE** plateau di camminata, percentuali reali e stabilità dell'input
-**UNKNOWN**. Picchi/range dei rapporti risentono delle letture non atomiche:
-massimo XYZ `0.25625445`, rapporto walk/velocity `0.01610..0.01988`.
-Non stimare la velocità stabile dividendo l'intero spostamento per 3 s.
+50%: 60.0010 s, moving 34.9278..45.4557 s, longer than the requested 3 s.
+End (-11.016597,-.119314,184.975510). Same .043 median suggests a walk plateau,
+PROBABLE, but actual input/stability remained UNKNOWN. Maximum XYZ .25625445;
+walk/velocity range .01610..01988 is affected by non-atomic reads. Do not divide
+the entire displacement by 3 s to infer speed.
 
-75%: 60.0048 s totali, movimento fra 49.6358 e 56.0976 s.
-Posizione `(-11.016597, -0.119314, 184.975510)` →
-`(13.345637, -0.213579, 178.954956)`. Mediana pc+9F24 ancora `0.043`,
-pur con corsa osservata dall'utente: possibile transizione o input non stabile,
-non una prova di velocità costante di corsa. Soglia walk/run **UNKNOWN**.
+75%: 60.0048 s, moving 49.6358..56.0976 s, ending
+(13.345637,-.213579,178.954956). User-observed run with .043 median could be a
+transition/unstable input; it did not establish a stable run-speed threshold.
 
-100%: 60.0027 s totali, movimento fra 19.6783 e 25.2399 s.
-Posizione `(13.345637, -0.213579, 178.954956)` →
-`(40.724037, 0.156936, 185.247192)`. Mediana pc+9F24 `0.16770001`, circa
-`3.9` volte `0.043`; mediana vettore XZ circa `3.75` volte quella al 25%.
-Rapporto mediano walk/velocity `0.01666666807`. **CONFIRMED**: valori distinti
-del parametro fra bassa deflessione e fondo corsa. **PROBABLE**: scelta di gait
-con parametro discreto; curva completa magnitude/speed, deadzone, soglia e
-rapporto animazione/velocità restano **UNKNOWN**.
+100%: 60.0027 s, moving 19.6783..25.2399 s, ending
+(40.724037,.156936,185.247192). Median parameter .16770001 is about 3.9× .043;
+median XZ vector about 3.75× the 25% sample. Median walk/velocity .01666666807.
+Distinct low/full-deflection parameters are CONFIRMED; a discrete gait choice
+was PROBABLE. Full curve, deadzone and animation coupling were initially UNKNOWN.
 
-### Valutazione Sprint attuale
+## Historical Sprint candidates and readiness
 
-| Candidate | Description | Player-only | Animation-safe | Collision-safe | Combat-safe | Recommended |
-|---|---|---|---|---|---|---|
-| A | risultato getter velocità `0x208FD0` prima della scrittura `+0x9F24` | filtro CChrPc/KCC verificabile | UNKNOWN | HIGH CONFIDENCE se resta nella pipeline | UNKNOWN | prima candidata per PoC, non definitiva |
-| B | modalità walk/run esistente | UNKNOWN | UNKNOWN | UNKNOWN | UNKNOWN | solo dopo evidenza runtime |
-| C | multiplier argomento Bullet | filtro KCC CONFIRMED | UNKNOWN | HIGH CONFIDENCE, sweep conservato | UNKNOWN | solo PoC, dt ancora aperto |
-| D | requested position delta / parametro +0x9F24 | filtro player possibile | UNKNOWN | HIGH CONFIDENCE se passa dal KCC | UNKNOWN | pista di ricerca, nessuna patch |
+The initial preferred research candidate was speed getter 208FD0, or its
+player-specific consumption in 205BC0 before +9F24. It required filtering the
+active CChrPc/KCC, preserving timing and passing requested position through
+Bullet. A shared Bullet argument multiplier was only a diagnostic alternative;
+existing locomotion-mode selection remained unverified. Equipment-load factors
+were rejected as a Sprint implementation. No option was then certified
+animation-safe, collision-safe or combat-safe. Later collision work explicitly
+rejected the simple upstream multiplier; the final diagnostic candidate is A+C.
 
-Rapporto animazione/movimento **UNKNOWN**. Nessun hook Sprint consigliato come
-definitivo; Phase 1 Sprint non pronta. Audio, INPUT-01 e STATE-01 non iniziati.
+At this initial checkpoint Sprint was NOT READY: caller stack/thread, consumed
+axes, walk/run threshold, F8A6/F8AD behavior, FPS timing and town/combat/animation
+relationships still required tests. A 60-second follow-up with zero moving
+samples did not validate moving flags. Later reports resolve some, not all,
+of these questions. Audio, INPUT-01 and STATE-01 were not started as full phases.
 
-### Recommended Sprint hook
+Initial validation included Python syntax, TOML parse, runtime_read self-check,
+runtime smoke and uniqueness of new build-local signatures. No commit was created
+at that checkpoint; no EXE/CPK/save file was changed by a writing tool.
 
-**HIGH CONFIDENCE, candidato di ricerca**: risultato di `0x208FD0`, o suo consumo
-player in `0x205BC0`, prima della scrittura `+0x9F24`. Un eventuale PoC deve
-filtrare l'istanza attiva CChrPc tramite la relazione fisica verificata, preservare
-lo step temporale e lasciare la posizione richiesta passare dal KCC. Preferire
-questo punto al moltiplicatore Bullet evita di scegliere un fattore temporale
-come se fosse velocità. Non moltiplicare la posizione finale o gli NPC.
-Il getter include modificatori di stato/statistiche: non alterarne la tabella
-globale. Non è dimostrato che cambiarne il risultato aggiorni anche il gait.
-Nessun hook o moltiplicatore è stato implementato.
+## Static Block 3 inventory
 
-### Remaining unknowns / Phase 1 Sprint readiness
+| Item | Location | Evidence / limits |
+|---|---|---|
+| DirectInput initialization | 64F8A0, pointer C59F18 | CONFIRMED static |
+| Keyboard | Create 64F760, vtable 8AD1C0, poll 657840 | CONFIRMED static |
+| Mouse | Create 64F7F0, vtable 8AD188, poll 657A21 | CONFIRMED static |
+| Controller | Steam candidate 683E40/684110, no generic DI/XInput | CONFIRMED path, actual sample-path use PROBABLE |
+| Input latches | 683140/687330/67EA70/68FBE0 inside 696020 | CONFIRMED static |
+| Action mapping | Physical input to logical PS-style CSysPad | PROBABLE layout, exact structure UNKNOWN |
+| Player | CChrPc vtable 80AE08 and runtime association above | CONFIRMED session; global-player source initially UNKNOWN |
+| Position | KCC ghost position and CChrPc fields | Initially UNKNOWN offsets; later report confirms ghost+40 |
+| Movement update | 1EA4E0 → 320310 → wrapper → 58CF40 → 72A5F0 | HIGH CONFIDENCE initially; runtime stack later refined |
+| Bullet input | RDX vec4 → KCC+50 | HIGH CONFIDENCE Bullet side |
+| Base/max speed | Initial semantic gap | Later producer/getter findings above |
+| Equipment multiplier | move_speed_param.dat → stats+28 at 271436 | HIGH existence, effect initially PROBABLE |
+| Delta time | App vfunc+D8, base app+E8, interval +E4 in timed-velocity mode | Initially PROBABLE |
+| Combat / controllable state | CChrStatusBattle, CFighterStatusBattle, CUiModeField/Town RTTI | Full classifiers UNKNOWN |
+| Generic Phyre animation gait | Metadata exists, actual player use unproven | UNKNOWN |
+| Bullet integration | CChrPc creation +140 through Phyre wrapper | HIGH CONFIDENCE |
 
-- Stack/thread del caller effettivo: non catturati; chain statica HIGH CONFIDENCE.
-- Percentuale reale dello stick, deadzone e soglia walk/run: non misurate.
-- 75% con gait corsa ma mediana da camminata: richiede cattura stabile e asse reale.
-- Flag `F8A6`/`F8AD` durante camminata e corsa: la verifica aggiuntiva di 60 s
-  ha prodotto zero campioni mobili, quindi non li convalida.
-- Dt dell'integrazione gameplay ricostruito; timestep passato al wrapper e
-  collision step da confrontare sotto framerate diversi.
-- Legame tra animazione e velocità, field/città/combat: da verificare.
+## Bullet character controller
 
-**Phase 1 Sprint readiness: NOT READY**. Controller e parametri sono individuati;
-la DoD completa di MOVEMENT-01/02 resta aperta sui punti sopra.
+Creation: CChrPc vtable+140, 1EF070 → 31FB90 → 6CAEB0 → 57F250 → 580080 →
+5736C0, PPhysics::PInternal::PModifiedBulletKinematicCharacterController,
+vtable 879BD0. Base btKinematicCharacterController has vtable 8C5550 and ctor
+729B20. PPhysicsCharacterControllerComponent vfunc1, 7AAA60, and
+PUtilityCharacter also reach 57F250.
 
-### Git commit / validation
+| Vtable byte offset | Function | Observed behavior |
+|---|---|---|
+| +08 | 58D340 | Phyre updateAction(world,dt) override |
+| +18 | 72A5F0 | setWalkDirection, writes +50 direction, +60 normalized direction, E3=1 |
+| +20 | 72A5A0 | setVelocityForTimeInterval, same vectors, E3=0, interval +E4 |
+| +28..58 | 72A4B0..729EC0 | Reset/warp/preStep/playerStep/canJump/jump/onGround sequence initially inferred from Bullet 2.8x |
 
-Nessun commit creato: modifiche lasciate nel working tree per revisione, secondo
-le istruzioni AGENTS più recenti. Nessuna modifica a executable, CPK o salvataggi
-tramite strumenti di scrittura. Verifica sintassi Python, parsing TOML,
-`runtime_read.py self-check`, smoke runtime e unicità delle nuove firme eseguiti.
-Le firme sono build-local; i VA heap riportati sono solo evidenze della sessione.
+Initial direct-call scanning found no direct call to the two setters because
+submission is virtual at 58D31C. Preserving KCC submission preserves its sweep
+pipeline, but that fact alone does not prove accelerated terrain behavior safe.
+Direct position writes bypass the pipeline and were excluded.
 
-## Tabella DoD blocco 3
+## Existing equipment-load speed modifier
 
-| Elemento | RVA / struttura | Stato | Confidence |
-|---|---|---|---|
-| DirectInput init | `0x64F8A0`, `IDirectInput8*` @ `0xC59F18` | VANILLA STATIC | CONFIRMED |
-| Keyboard device | `0x64F760` → `PInputDeviceKeyboard` (vt `0x8AD1C0`), poll `0x657840` | VANILLA STATIC | CONFIRMED |
-| Mouse device | `0x64F7F0` → `PInputDeviceMouse` (vt `0x8AD188`), poll `0x657A21` | VANILLA STATIC | CONFIRMED |
-| Controller device | Steam `ISteamController` (`0x683E40` init, `0x684110` poll); nessun DI/XInput | VANILLA STATIC | CONFIRMED (percorso) / PROBABLE (uso effettivo) |
-| Input poll | reader thread + latch main thread `0x683140`/`0x687330`/`0x67EA70`/`0x68FBE0` in `0x696020` | VANILLA STATIC | CONFIRMED |
-| Action mapping | layer fisico → pad virtuale PS (`CSysPad`, key config) | VANILLA STATIC | PROBABLE (struttura UNKNOWN) |
-| Player object | classe `CChrPc` (vt `0x80AE08`); istanza e relazione KCC nella cattura sopra | VANILLA RUNTIME | CONFIRMED (sessione) / UNKNOWN (globale player) |
-| Player position | posizione del `btKinematicCharacterController` ghost object; offset nel `CChrPc` | — | UNKNOWN |
-| Player movement update | catena candidata `0x1EA4E0 → 0x320310 → wrapper → 0x58CF40 → 0x72A5F0` | VANILLA STATIC + letture runtime | HIGH CONFIDENCE; stack effettivo UNKNOWN |
-| Movement input vector | argomento di `setWalkDirection` (`[rdx]`, vec4) → KCC `+0x50` | VANILLA STATIC (lato Bullet) | HIGH (lato Bullet) / UNKNOWN (lato gioco) |
-| Base/max speed | — | — | UNKNOWN → `MOVEMENT-02` |
-| Movement multiplier | fattore da carico equip `move_speed_param.dat` → `stats+0x28` (`0x271436`) | VANILLA STATIC | HIGH (esistenza) / PROBABLE (effetto sulla locomozione) |
-| Delta time | `0x696020`: dt da `app->vfunc[0xD8]` (base `app+0xE8`); arriva al KCC come `timeInterval` (`+0xE4`) se usato `setVelocityForTimeInterval` | VANILLA STATIC | PROBABLE |
-| Combat state | classi `CChrStatusBattle`, `CFighterStatusBattle`, `CUiModeField`/`CUiModeTown` | — | UNKNOWN (flag) → `STATE-01` |
-| Controllable state | — | — | UNKNOWN → `STATE-01` |
-| Animation locomotion link | Phyre `PCharacterMotionGait` (`m_gaits`, `m_speedMultiplier`, `m_motionAnimSpeedScale`, `m_animSpeedLimit`) presenti; uso per il player non dimostrato | — | UNKNOWN |
-| Bullet/collision integration | `CChrBase::vfunc[0x28]` → … → `PModifiedBulletKinematicCharacterController` | VANILLA STATIC | HIGH |
+System filename table A55160 has 80 entries. Index 2C is move_speed_param.dat.
+Loader 1D3768 combines a %s%s path and reads through filesystem C72D80;
+buffers AEA4C0[index] give AEA620 and sizes AEA720[index] give AEA7D0.
+GetSysData is 1D2FC0 and size getter 1D3010.
 
-## Bullet / character controller (HIGH CONFIDENCE)
+26F840 sums values from ten equipment slots through 36E0E0, scaling weapons
+of types 1..16 or 23 by param[0]. At 271436, a chunk of derived-stat routine
+270E00, six thresholds at +04..18 select a factor at +1C+i*4 into stats+28.
+The same block writes stats+20/+24 total weight/+2C. This is an equipment-load
+speed band, not base speed. Runtime readers were initially UNKNOWN. Changing
+this visible/stat-semantic value was not recommended for Sprint.
 
-Catena di creazione (xref statiche):
-```
-CChrPc vtable[+0x140] = 0x1EF070
-  → 0x31FB90 → 0x6CAEB0 → 0x57F250 → 0x580080
-    → 0x5736C0: ctor PPhysics::PInternal::PModifiedBulletKinematicCharacterController (vt 0x879BD0)
-         base btKinematicCharacterController (vt 0x8C5550, ctor 0x729B20)
-```
-Anche `PCharacter::PPhysicsCharacterControllerComponent` (vfunc 1 → `0x7AAA60`) e `PCharacter::PUtilityCharacter`
-arrivano a `0x57F250`.
+## Locomotion-state RTTI, not demonstrated behavior
 
-Vtable `PModifiedBulletKinematicCharacterController` (`0x879BD0`):
+Player classes: CChrStatusMove 80A848, CPcStatusMain 825900, CChrStatusJump,
+CChrStatusSquat, CPcStatusSquat, CChrStatusSit/Hug/Battle and CChrRtMove 815BB8.
+NPC classes include CNpcStatusMove/Chase/Step/Avoid/Navi and
+CChrUnitRunner/Chaser. RTTI alone did not establish separate player walk/run modes.
 
-| Slot | RVA | Ruolo (Bullet) | Evidenza |
-|---|---|---|---|
-| +0x08 | `0x58D340` | `updateAction(world, dt)` — **override Phyre** | slot override, non verificato oltre |
-| +0x18 | `0x72A5F0` | `setWalkDirection(const btVector3&)` | scrive `+0x50` (dir), `+0x60` (normalizzata), `+0xE3 = 1` |
-| +0x20 | `0x72A5A0` | `setVelocityForTimeInterval(vel, t)` | scrive `+0x50`, `+0x60`, `+0xE3 = 0`, `t` → `+0xE4` |
-| +0x28..+0x58 | `0x72A4B0` … `0x729EC0` | reset/warp/preStep/playerStep/canJump/jump/onGround | ordine vtable Bullet 2.8x, non verificato singolarmente |
+## Original proposed runtime tests
 
-Nessuna chiamata diretta a `0x72A5F0`/`0x72A5A0`. Chiamante virtuale candidato
-di `setWalkDirection`: `0x58D31C`; associazione oggetti runtime verificata sopra.
+These are historical proposals; later read-only/temporary diagnostics supplied
+the actual evidence. They do not authorize anti-debug bypasses. The proposed
+setup was x64dbg after a vanilla Steam launch; record a Steam CEG/attach failure
+rather than attempting to bypass it.
 
-**Conclusione collision:** qualsiasi modifica fatta *a monte* di `setWalkDirection`/`setVelocityForTimeInterval`
-(velocità desiderata) passa per il sweep di collisione del KCC. Una modifica scritta direttamente sulla
-posizione la bypasserebbe.
+MOVEMENT-01 proposed observing 14072A5F0/14072A5A0 while idle/moving, recording
+KCC RCX, return [RSP], vector [RDX], optional XMM2 interval and a four-level stack.
+Shared NPC/player callers would require the resolved player-KCC filter.
 
-## Modificatore di velocità esistente: `move_speed_param.dat`
+MOVEMENT-02 proposed player-filtered two-second captures for partial/full stick,
+keyboard, town/field and drawn weapons/combat, logging vec4 and previous +E4.
+Constant, discrete and dt-proportional magnitudes would distinguish fixed speed,
+gait bands and per-frame displacement. Actual manual captures above had important
+timing/input limitations and must not be treated as those idealized tests.
 
-- Tabella file-dati di sistema `0xA55160` (80 voci, `char*`), indice `0x2C` = `"move_speed_param.dat"`.
-  Loader `0x1D3768` (costruisce il path con `"%s%s"`, legge via file system `0xC72D80`), buffer in
-  `0xAEA4C0[idx]` → **`0xAEA620`**, size in `0xAEA720[idx]` → `0xAEA7D0`. Getter `GetSysData(idx)` = `0x1D2FC0`,
-  size getter `0x1D3010`. (Utile anche per il blocco 5.)
-- `0x26F840`: somma un valore per 10 slot equip (sub `0x36E0E0`); per le armi (tipo 1..0x16 o 0x23) moltiplica
-  per `param[0]` (float).
-- `0x271436` (chunk di `0x270E00`, calcolo statistiche derivate): confronta il totale con 6 soglie
-  `param[+0x04..+0x18]` e prende il fattore `param[+0x1C + i*4]` → **`stats+0x28`** (float). Stesso blocco scrive
-  `stats+0x20`, `+0x24` (totale peso), `+0x2C`.
-- Interpretazione: **carico dell'equipaggiamento → fascia di velocità**. È un modificatore esistente, non la
-  velocità base. Lettori di `stats+0x28`: UNKNOWN (runtime).
-
-Da non usare come Sprint: altera una statistica derivata visibile/semantica (carico), non la modalità di locomozione.
-
-## Stati di locomozione esistenti (solo RTTI, nessun comportamento verificato)
-
-Player: `CChrStatusMove` (vt `0x80A848`), `CPcStatusMain` (vt `0x825900`), `CChrStatusJump`, `CChrStatusSquat`,
-`CPcStatusSquat`, `CChrStatusSit`, `CChrStatusHug`, `CChrStatusBattle`. `CChrRtMove` (vt `0x815BB8`).
-NPC: `CNpcStatusMove`, `CNpcStatusChase`, `CNpcStatusStep`, `CNpcStatusAvoid`, `CNpcStatusNavi`,
-`CChrUnitRunner`, `CChrUnitChaser`. Esistenza di walk/run separati per il player: UNKNOWN.
-
-## Raccomandazione Sprint (provvisoria)
-
-Non ancora decidibile: manca la funzione che produce la velocità desiderata (`MOVEMENT-01`). Stato delle opzioni:
-
-| Opzione | Valutazione attuale |
-|---|---|
-| A. max/desired speed | **Candidata preferita**, a monte del KCC → collisione intatta, non tocca NPC/animazioni globali/timer. Serve `MOVEMENT-01/02` per trovarla. Impatto animazione: da verificare (rischio scivolamento se il blend walk/run non segue la velocità). |
-| B. modalità di locomozione esistente | Possibile se `MOVEMENT-02` mostra due fasce walk/run (es. magnitudine stick). Migliore per l'animazione. |
-| C. multiplier sull'argomento di `setWalkDirection`/`setVelocityForTimeInterval` | **Sconsigliata come soluzione finale**: condiviso da tutti i personaggi (serve filtro per KCC del player), a valle di animazione/stato, e con `setVelocityForTimeInterval` va rispettato `timeInterval` (`+0xE4`). Utile solo come PoC di verifica. Hook stabile (signature di corpo unica). |
-| D. fattore carico `stats+0x28` | Sconsigliata (vedi sopra). |
-| Speedhack dt globale | Escluso dal brief. |
-
-Combat compatibility: dipende da `STATE-01`.
-
-## Test runtime
-
-Prerequisiti comuni: x64dbg portable; `tools\mods.ps1 off`; SKIF: Special K disattivato; avviare da Steam e
-**attaccare** il debugger al processo (evita il relaunch Steam; se CEG/anti-debug crasha all'attach, annotarlo).
-VA = `0x140000000 + RVA`. Risultati → **VANILLA RUNTIME**.
-
-### TEST ID: MOVEMENT-01
-
-Purpose: trovare il chiamante lato gioco che imposta il movimento del KCC del player (funzione di locomozione).
-
-Steps:
-1. In campo aperto, nessun NPC vicino se possibile, personaggio fermo.
-2. x64dbg: breakpoint su `0x14072A5F0` **e** `0x14072A5A0`.
-3. Se scattano anche da fermo (NPC/partner): Edit breakpoint → Break condition `0`, Log text:
-   `kcc={p:rcx} ret={p:[rsp]} xy={x:[rdx]}` → Continue. Limitare la raccolta, poi filtrare
-   per il KCC ricostruito tramite ID fisico. Includere XMM2 per `setVelocityForTimeInterval`.
-4. Se scattano solo muovendosi: al break, annota call stack (tab Call Stack, almeno 4 righe).
-
-Collect:
-- quale dei due breakpoint scatta (`setWalkDirection` vs `setVelocityForTimeInterval`);
-- valori `ret` (indirizzi di ritorno) — un chiamante può essere condiviso da player e NPC;
-- `kcc` associato al player (costante mentre cammini);
-- call stack.
-
-Expected useful outcomes:
-A. Un `ret` unico durante la camminata → RVA della funzione di locomozione; la analizzo staticamente.
-B. `ret` identico per player e NPC → funzione condivisa; serve il `kcc` del player per filtrare (e si risale al `CChrPc`).
-
-Return to me: file log di x64dbg (tab Log → copia tutto) + screenshot call stack.
-
-### TEST ID: MOVEMENT-02
-
-Purpose: capire dove entra la velocità e se esistono fasce walk/run.
-
-Steps (stesso breakpoint condizionale di MOVEMENT-01, filtrato col `kcc` del player: condizione `rcx==<kcc>`):
-1. Log text: `xy={x:[rdx]} zw={x:[rdx+8]} tprev={x:[rcx+0xE4]}` (ogni qword = 2 float; `tprev` = timeInterval
-   del frame precedente, significativo solo per `0x14072A5A0`).
-2. Registra ~2 s per ciascuna situazione: stick leggermente inclinato, stick al massimo, tastiera avanti,
-   in città, in campo, con arma estratta / in combattimento.
-
-Collect: i log, etichettati per situazione.
-
-Expected useful outcomes:
-A. Magnitudine costante per stick parziale/pieno → movimento a velocità fissa (niente fasce).
-B. Due o più magnitudini discrete → esistono walk/run (opzione B possibile).
-C. Magnitudine ∝ dt (varia con il frame time) → `setWalkDirection` riceve spostamento per frame.
-
-Return to me: i log (valori hex: li converto io).
-
-### TEST ID: STATE-01
-
-Purpose: trovare un flag combat/non-combat e controllabile/non controllabile. Richiede Cheat Engine (o rimandabile
-dopo MOVEMENT-01, quando avremo l'istanza `CChrPc` e potremo leggerne i campi da statica).
-
-Steps (Cheat Engine, "Byte", unknown initial value):
-1. In campo senza nemici: First Scan unknown.
-2. Ingaggia un nemico (combattimento attivo): Next Scan "Changed value".
-3. Esci dal combattimento: "Changed value". Rientra: "Changed value". Ripeti fino a < 200 risultati.
-4. Durante un dialogo/cutscene, confronta con "Unchanged"/"Changed" per il flag controllabile.
-
-Collect: indirizzi rimasti + valori nelle 3 situazioni; per ciascuno "Find out what writes to this address" (1 riga).
-
-Return to me: lista indirizzi, valori, e le istruzioni che scrivono (indirizzo + opcode).
+STATE-01 proposed scanning changing byte values across field/combat/dialogue,
+then identifying writers after narrowing below 200 candidates. It was not
+completed; no production combat/control-state classifier follows from it.

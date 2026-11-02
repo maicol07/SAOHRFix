@@ -1,212 +1,201 @@
-# Graphics — D3D11 / DXGI / render loop
+# Graphics, D3D11 / DXGI / render loop
 
-Build: `sha256 1923f0d8…9e43` (vedi `build.md`). Tutte le RVA sono relative a ImageBase `0x140000000`.
-Tutte le scoperte di questo documento sono **statiche → `VANILLA`** (nessuna dipendenza dalle mod installate).
-Boundaries da `.pdata` (`[begin, end)`), salvo dove indicato "leaf" (nessuna entry `.pdata`).
+Build SHA-256 `1923f0d8…9e43`, see build.md. All addresses are RVAs relative to
+ImageBase `0x140000000`. Findings are static VANILLA analysis, independent of
+installed mods. Function boundaries come from .pdata, using half-open ranges;
+leaf functions have no .pdata entry. Tools: xref.py, vcall_scan.py and sig.py.
+Patterns are in research/signatures.toml; data addresses in addresses.toml.
 
-Strumenti: `tools/xref.py` (xref/disasm), `tools/vcall_scan.py`, `tools/sig.py`. Signature in
-`research/signatures.toml`, indirizzi dati in `research/addresses.toml`.
+## Block 2 summary
 
-## Tabella riassuntiva (DoD blocco 2)
-
-| Elemento | RVA / metodo | Confidence |
+| Item | RVA / method | Confidence |
 |---|---|---|
-| Graphics initialization | `PApplication::vfunc[1]` `0x6550A0` → `0x4F7C80` (wrapper) → `0x4F7D40` (init D3D11) | CONFIRMED |
-| DXGI factory creation | `0x4F5D90`: `CreateDXGIFactory` (thunk `0x6EC7C8`) — solo per enumerare display mode, factory rilasciata | CONFIRMED |
-| Adapter selection | Nessuna: `pAdapter = NULL` (adapter di default). `0x4F5D90` usa `EnumAdapters(0)`/`EnumOutputs(0)` solo per il refresh rate | CONFIRMED |
-| D3D11 device creation | `0x4F7D40` @ `0x4F7FA3`: `D3D11CreateDeviceAndSwapChain` (thunk `0x6EC7C2`) | CONFIRMED |
-| Device pointer/storage | renderer static `0xBAD540` + `0xA8` = **`0xBAD5E8`** (referenziato anche come globale) | CONFIRMED |
-| Context pointer/storage | `0xBAD540 + 0xB0` = **`0xBAD5F0`** (referenziato come globale) | CONFIRMED |
-| Swapchain pointer/storage | `0xBAD540 + 0xB8` = **`0xBAD5F8`** (solo accessi `this`-relative) | HIGH CONFIDENCE |
-| Render loop | Render thread `PhyreEngineRenderThread`: entry `0x526D10` → loop `0x53F740` → exec cmd buffer `0x534B90` → dispatcher `0x531570` | CONFIRMED |
-| Present path | `0x531570` (case comando Present) @ `0x5316EA` → wrapper **`0x4F5F10`** → `IDXGISwapChain::Present` (vtbl `+0x40`) @ `0x4F5F3C` | CONFIRMED |
-| ResizeBuffers path | WndProc `WM_SIZE` → `app+0xD8` dirty → main loop `0x652B3F` → `app::vfunc[0x78]` `0x656DF0` → renderer resize **`0x4FAED0`** → `ResizeBuffers` (vtbl `+0x68`) @ `0x4FAFA9` | CONFIRMED |
-| HWND | globale **`0xC59F08`** (scritto a `0x6520AD` subito dopo `CreateWindowExA`) | CONFIRMED |
-| WndProc | **`0x650440`** (class `PhyreFrameworkClass`, `lpfnWndProc` @ `0x651EB0`) | CONFIRMED |
-| Render thread | Dedicato. Creato da `0x531F50` (`"PhyreEngineRenderThread"`, thread proc `0x526D10`) | CONFIRMED |
+| Initialization | PApplication vfunc[1] 6550A0 → wrapper 4F7C80 → D3D11 init 4F7D40 | CONFIRMED |
+| DXGI factory | 4F5D90, CreateDXGIFactory thunk 6EC7C8, display-mode enumeration only, factory released | CONFIRMED |
+| Adapter selection | pAdapter=NULL, default adapter; EnumAdapters(0)/EnumOutputs(0) only select refresh rate | CONFIRMED |
+| Device creation | 4F7FA3 inside 4F7D40, D3D11CreateDeviceAndSwapChain thunk 6EC7C2 | CONFIRMED |
+| Device storage | Static renderer BAD540+A8 = BAD5E8 | CONFIRMED |
+| Immediate context | BAD540+B0 = BAD5F0 | CONFIRMED |
+| Swapchain storage | BAD540+B8 = BAD5F8, accessed relative to this | HIGH CONFIDENCE |
+| Render loop | PhyreEngineRenderThread entry 526D10 → 53F740 → command execution 534B90 → dispatcher 531570 | CONFIRMED |
+| Present | Dispatcher call 5316EA → 4F5F10 → swapchain vtable+40 at 4F5F3C | CONFIRMED |
+| ResizeBuffers | WM_SIZE → app+D8 dirty → main loop 652B3F → vfunc+78 656DF0 → renderer 4FAED0 → vtable+68 call 4FAFA9 | CONFIRMED |
+| HWND | C59F08, stored at 6520AD after CreateWindowExA | CONFIRMED |
+| WndProc | 650440, PhyreFrameworkClass; lpfnWndProc assigned at 651EB0 | CONFIRMED |
+| Render thread | Dedicated, created by 531F50, entry 526D10 | CONFIRMED |
 
-## Pipeline ricostruita
+## Reconstructed pipeline
 
-```
-PApplication::vfunc[1] 0x6550A0                  (init applicazione; vtable base 0x8AD878)
-  └─ 0x654870 / diretto → 0x4F7C80(renderer, params)
-        GetClientRect(params->hwnd) → width/height = client rect
-        └─ 0x4F7D40(renderer, w, h, msaa, fullscreen?, vsync, hwnd)   [arg5 byte, arg6 byte, arg7 HWND]
-              1. D3D11CreateDevice(NULL, HW, …, NULL, 0, 7, NULL, &fl, NULL)   probe feature level
-                 fallisce se fl < 0xA000 (FL 10_0)
-              2. [MSAA > 0] D3D11CreateDevice temporaneo → 0x4F6A90 (check sample count R8G8B8A8) → Release
-              3. riempie DXGI_SWAP_CHAIN_DESC in renderer+0xC0
-              4. GetSystemMetrics(SM_CXSCREEN/SM_CYSCREEN) → 0x4F5D90 → refresh rate del display mode nativo
-              5. D3D11CreateDeviceAndSwapChain(…) → renderer+0xA8/+0xB0/+0xB8
-              6. QI ID3D11Debug / ID3D11InfoQueue (fallisce in release, nessun debug flag)
-              7. swapchain->GetBuffer(0, ID3D11Texture2D) → renderer+0x148 ; GetDesc → +0x180
-              8. crea RT/depth, shader di sistema (0x4F7210, 0x4F74D0), stati
-              9. [FL ≥ 11_0] device->CreateBuffer (MiscFlags 0x10 DRAWINDIRECT_ARGS) → renderer+0x638
-             10. context->OMSetRenderTargets(1, backbuffer RTV, depth DSV)
+PApplication vfunc[1] 6550A0, base vtable 8AD878, reaches wrapper 4F7C80
+directly or through 654870. The wrapper reads GetClientRect and invokes
+4F7D40(renderer,w,h,msaa,fullscreen?,vsync,hwnd). Argument 5 and 6 are bytes;
+argument 7 is HWND. Initialization proceeds as follows:
 
-main thread: PeekMessage loop → app update ("animate") → registra command buffer
-render thread 0x53F740: ring 16 slot (0x28 B) @ +0x40, wait semaforo slot → 0x534B90 → 0x531570
-  case Present: t=0x544910(); 0x4F5F10(renderer) ; t=0x544910(); globale double 0xBBA9C8 aggiornato
-                → release semaforo +0x2D0 (frame done → main thread)
-```
+1. Temporary D3D11CreateDevice(NULL,HW,...) probes feature level; below A000,
+   FL 10_0, initialization fails.
+2. When MSAA>0, another temporary device and 4F6A90 check R8G8B8A8 sample count,
+   then release the device.
+3. Fill DXGI_SWAP_CHAIN_DESC at renderer+C0.
+4. GetSystemMetrics SM_CXSCREEN/SM_CYSCREEN and 4F5D90 select native-mode refresh.
+5. D3D11CreateDeviceAndSwapChain writes renderer+A8/B0/B8.
+6. Query ID3D11Debug / ID3D11InfoQueue. Release builds set no debug flag, so these
+   queries may fail.
+7. Swapchain GetBuffer(0,ID3D11Texture2D) writes +148; GetDesc writes +180.
+8. Create RT/depth, system shaders through 4F7210/4F74D0, and states.
+9. For FL>=11_0, create a DRAWINDIRECT_ARGS buffer, MiscFlags 10, at +638.
+10. Bind one backbuffer RTV and depth DSV through OMSetRenderTargets.
 
-### Parametri `D3D11CreateDeviceAndSwapChain` (CONFIRMED, `0x4F7F53`–`0x4F7FA3`)
+The main thread runs PeekMessage, app animate/update and command recording.
+Render loop 53F740 consumes a 16-slot ring, each slot 28 bytes, at +40. It waits
+on slot semaphores, then executes through 534B90/531570. Present reads timer
+544910 before and after 4F5F10, updates double BBA9C8, and releases semaphore
++2D0 to signal frame completion to the main thread.
 
-| Parametro | Valore |
+### Device/swapchain creation arguments, CONFIRMED at 4F7F53–4F7FA3
+
+| Argument | Value |
 |---|---|
-| `pAdapter` | `NULL` |
-| `DriverType` | `D3D_DRIVER_TYPE_HARDWARE` (1) se HWND ≠ NULL, altrimenti `WARP` (5) |
-| `Software` | `NULL` |
-| `Flags` | `0` (niente `DEBUG`, niente `BGRA_SUPPORT`, niente `SINGLETHREADED`) |
-| `pFeatureLevels` | `{0xB000, 0xA100, 0xA000}` = `11_0, 10_1, 10_0` |
-| `FeatureLevels` | `3` |
-| `SDKVersion` | `7` |
-| `ppSwapChain` / `ppDevice` / `ppImmediateContext` | `renderer+0xB8` / `+0xA8` / `+0xB0` |
-| `pFeatureLevel` | locale → copiato in `renderer+0x108` (riletto a `0x4F82ED`: path extra se ≥ `0xB000`) |
+| pAdapter / Software | NULL / NULL |
+| DriverType | HARDWARE 1 with HWND, otherwise WARP 5 |
+| Flags | 0; no DEBUG, BGRA_SUPPORT or SINGLETHREADED flag |
+| pFeatureLevels | B000/A100/A000, meaning 11_0/10_1/10_0 |
+| FeatureLevels / SDKVersion | 3 / 7 |
+| Output swapchain/device/context | renderer+B8/A8/B0 |
+| Resulting feature level | Local value copied to +108; checked at 4F82ED for >=B000 |
 
-Feature level massimo richiesto: **11_0**. Nessun 11_1. Feature level ottenuto: runtime (su HW moderno: 11_0).
+The highest requested level is 11_0, not 11_1. The actual returned level is a
+runtime result, expected to be 11_0 on modern hardware.
 
-### `DXGI_SWAP_CHAIN_DESC` @ `renderer+0xC0` (x64, 0x48 byte)
+### DXGI_SWAP_CHAIN_DESC at renderer+C0, x64, 48 bytes
 
-| Offset | Campo | Valore scritto | Confidence |
-|---|---|---|---|
-| +0x00 | `BufferDesc.Width` | client width | CONFIRMED |
-| +0x04 | `BufferDesc.Height` | client height | CONFIRMED |
-| +0x08 | `RefreshRate.Numerator` | 60, poi sovrascritto da `0x4F5D90` | CONFIRMED |
-| +0x0C | `RefreshRate.Denominator` | 1, idem | CONFIRMED |
-| +0x10 | `BufferDesc.Format` | `0x1C` = `DXGI_FORMAT_R8G8B8A8_UNORM` (**non** `_SRGB`) | CONFIRMED |
-| +0x14 / +0x18 | `ScanlineOrdering` / `Scaling` | 0 / 0 (UNSPECIFIED) | CONFIRMED |
-| +0x1C | `SampleDesc.Count` | MSAA clamp `[1,16]`, validato da `0x4F6A90` | CONFIRMED |
-| +0x20 | `SampleDesc.Quality` | 0 | CONFIRMED |
-| +0x24 | `BufferUsage` | `0x20` = `DXGI_USAGE_RENDER_TARGET_OUTPUT` | CONFIRMED |
-| +0x28 | `BufferCount` | **1** | CONFIRMED |
-| +0x30 | `OutputWindow` | HWND | CONFIRMED |
-| +0x38 | `Windowed` | `!params.fullscreen` | CONFIRMED |
-| +0x3C | `SwapEffect` | **0 = `DXGI_SWAP_EFFECT_DISCARD`** (blt model legacy) | CONFIRMED |
-| +0x40 | `Flags` | `2` = `DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH` | CONFIRMED |
+All listed writes are CONFIRMED.
 
-Conseguenze:
-- Blt model + 1 buffer + DISCARD: niente flip model, niente tearing, niente VRR "vero" in windowed.
-  Upgrade a flip model possibile in futuro intercettando la creazione (vedi hook strategy).
-- Backbuffer UNORM lineare: il gioco scrive valori già gamma-encoded. Nessun HDR.
-  → **conferma statica** di "sRGB G2.2 BT.709 SDR" riportato da `dlss5-feed.log` (quel dato ora è VANILLA-coerente).
-- Refresh rate: ultimo display mode di `EnumOutputs(0)` con `Width==SM_CXSCREEN && Height==SM_CYSCREEN`,
-  formato R8G8B8A8, `DXGI_ENUM_MODES_INTERLACED`. Rilevante solo in fullscreen esclusivo.
+| Offset | Field | Written value |
+|---|---|---|
+| +00 / +04 | Width / Height | Client rectangle dimensions |
+| +08 / +0C | Refresh numerator / denominator | Initially 60/1, overwritten by 4F5D90 |
+| +10 | Format | 1C, R8G8B8A8_UNORM, not SRGB |
+| +14 / +18 | ScanlineOrdering / Scaling | 0/0, UNSPECIFIED |
+| +1C | SampleDesc.Count | MSAA clamped to 1..16 and validated by 4F6A90 |
+| +20 | SampleDesc.Quality | 0 |
+| +24 | BufferUsage | 20, RENDER_TARGET_OUTPUT |
+| +28 | BufferCount | 1 |
+| +30 | OutputWindow | HWND |
+| +38 | Windowed | !params.fullscreen |
+| +3C | SwapEffect | 0, DISCARD, legacy blt model |
+| +40 | Flags | 2, ALLOW_MODE_SWITCH |
 
-### Present (CONFIRMED)
+This is a one-buffer DISCARD blt swapchain, not flip model, with no requested
+tearing support. A future flip-model change would need creation interception.
+UNORM storage and DXGI 1.0 are consistent with SDR output; the modded log's
+sRGB G2.2 BT.709 SDR observation agrees with that initialization. The inference
+that the game writes gamma-encoded values is not a new runtime color capture.
+Refresh selection chooses the last EnumOutputs(0) R8G8B8A8 mode whose dimensions
+match the desktop, using DXGI_ENUM_MODES_INTERLACED; relevant to exclusive fullscreen.
 
-`0x4F5F10` — 0x39 byte, unico caller `0x5316EA`:
-```
-rcx = renderer->swapchain (+0xB8); if NULL return false
-Present(SyncInterval = (renderer+0x1740 != 0) ? 1 : 0, Flags = 0)
+### Present, CONFIRMED
+
+4F5F10 is 39 bytes and has one observed caller, 5316EA. It returns false for
+a null renderer+B8 swapchain; otherwise calls:
+
+```text
+Present(SyncInterval = renderer[+1740] != 0 ? 1 : 0, Flags = 0)
 return SUCCEEDED(hr)
 ```
-- Due argomenti oltre al `this` → coerente con `Present(UINT SyncInterval, UINT Flags)`.
-- **VSync = booleano runtime** in `renderer+0x1740`, impostato da `0x4F82B3` con `params+0xD`
-  (6° argomento dell'init). SyncInterval è solo 0 o 1. `Flags` sempre 0 → mai `DXGI_PRESENT_ALLOW_TEARING`.
-- Nessun limiter visibile attorno a Present: solo due letture del timer `0x544910` (QPC+`timeGetTime`)
-  e aggiornamento del globale double `0xBBA9C8`. Il pacing apparente = VSync + semaforo render thread.
-  Limiter nel main thread: **UNKNOWN** → blocco 7 (`timing.md`).
 
-### ResizeBuffers (CONFIRMED)
+VSync is a runtime byte written at 4F82B3 from params+D, argument 6. Interval
+is only 0 or 1 and Flags is always 0, never DXGI_PRESENT_ALLOW_TEARING. Around
+Present, only timer 544910, based on QPC/timeGetTime, and double BBA9C8 updates
+were identified. Visible pacing involves VSync and the render-thread semaphore;
+a separate main-thread limiter was UNKNOWN at this stage.
 
-Flusso:
-1. WndProc `WM_SIZE` (non minimized) → `GetClientRect` → `app->vfunc[0x28]` = `0x6556C0` (leaf):
-   salva `w,h` in `app+0xDC0/0xDC4`, `app+0xD8 = 1` (dirty). Log: `"WM_SIZE %4dx%4d\n"`.
-2. Main loop (`0x652B16`): se dirty e non in cambio focus → flush/attesa render thread (`vfunc[0x10]`, `0x53F2F0`)
-   → `app->vfunc[0x78]` (derived `0x696240` → base `0x656DF0`). Log errore: `"App failed during resize…"`.
-3. `0x656DF0`: lock renderer (`0x4E7340`), `0x4FAED0(renderer, w, h)`, poi riscala i viewport.
-4. `0x4FAED0`: `OMSetRenderTargets(0,NULL,NULL)`, release RT/depth, poi @ `0x4FAFA9`:
-   `ResizeBuffers(desc.BufferCount[+0xE8], w, h, desc.Format[+0xD0], desc.Flags[+0x100])`.
-   5 argomenti oltre al `this` = firma di `ResizeBuffers` → slot `+0x68` confermato dagli argomenti, non solo dall'indice.
-   Poi `GetBuffer(0)` (`+0x48`), `GetDesc` texture (`+0x50`), ricrea depth/RT, aggiorna `desc.Width/Height`,
-   `OMSetRenderTargets`.
+### ResizeBuffers, CONFIRMED
 
-Il resize **non** ricrea il device. Il render thread è fermo durante il resize (sincronizzazione al punto 2).
+1. Non-minimized WM_SIZE reads GetClientRect and calls app vfunc+28, leaf
+   6556C0, storing w/h at +DC0/DC4 and setting +D8 dirty. Log: WM_SIZE %4dx%4d.
+2. Main loop at 652B16 checks dirty and focus transitions, flushes/waits through
+   vfunc+10, 53F2F0, then calls app vfunc+78, derived 696240 → base 656DF0.
+   Failure logs App failed during resize.
+3. 656DF0 locks renderer through 4E7340, calls 4FAED0 and rescales viewports.
+4. 4FAED0 unbinds OM targets, releases RT/depth, then at 4FAFA9 calls
+   ResizeBuffers(desc.BufferCount at +E8,w,h,desc.Format at +D0,desc.Flags at +100).
+   The five arguments after this establish the method identity, not just slot+68.
+5. GetBuffer(0), slot+48, and texture GetDesc, slot+50, precede recreated depth/RT,
+   updated descriptor dimensions and OMSetRenderTargets.
 
-### Fullscreen / alt-tab / device reset
+Resize does not recreate the device. The render thread is synchronized/stopped
+while main-thread resize work runs.
 
-| Aspetto | Evidenza | Confidence |
+### Fullscreen, focus and device reset
+
+| Concern | Evidence | Confidence |
 |---|---|---|
-| `SetFullscreenState(FALSE, NULL)` | solo in shutdown renderer `0x4FEAB0` @ `0x4FEBEB`, prima di `Release` | CONFIRMED |
-| `GetFullscreenState` | `0x697C30` (vfunc di game-app, vtable `0x8B53E0`[51]) → `app+0x12AC` | CONFIRMED |
-| Toggle fullscreen | nessun `SetFullscreenState(TRUE)` trovato. `0x4F5D90` non chiama `MakeWindowAssociation` (gli altri 2 utenti della factory non verificati) → Alt+Enter probabilmente gestito da DXGI di default. `WM_SYSKEYDOWN` è però intercettato in WndProc: gestione custom possibile | PROBABLE |
-| `WM_ACTIVATE` | `0x654D20` → `app->vfunc[0x30]` → `app+0xDA` active, `+0xD9` changed; main loop → `vfunc[0x88]` ("active") | CONFIRMED |
-| `WM_SIZE SIZE_MINIMIZED` | globale `0xC59F05 = 1`, `app->vfunc[0x30](0)` | CONFIRMED |
-| Device lost / `DXGI_ERROR_DEVICE_REMOVED` | nessuna gestione trovata; `Present` fallito ritorna solo `false` | PROBABLE (assenza) |
+| SetFullscreenState(FALSE,NULL) | Shutdown 4FEAB0, call 4FEBEB, before Release | CONFIRMED |
+| GetFullscreenState | Game-app vfunc 697C30, vtable 8B53E0[51], writes app+12AC | CONFIRMED |
+| Fullscreen toggle | No TRUE call found; 4F5D90 does not call MakeWindowAssociation, other factory users unexamined. Default DXGI Alt+Enter is likely, but WndProc handles WM_SYSKEYDOWN | PROBABLE |
+| WM_ACTIVATE | 654D20 → app vfunc+30 → +DA active, +D9 changed → main-loop vfunc+88 | CONFIRMED |
+| SIZE_MINIMIZED | C59F05=1 and app vfunc+30(0) | CONFIRMED |
+| Device removed/lost handling | No explicit recovery found; failed Present only returns false | PROBABLE absence, not exhaustive proof |
 
-## Finestra / WndProc
+## Window and WndProc
 
-- `0x651E80`: `RegisterClassA("PhyreFrameworkClass", lpfnWndProc=0x650440)` → `AdjustWindowRect` →
-  `CreateWindowExA` (salta la creazione se l'host fornisce già un HWND in `params+0x30`) →
-  **HWND → `0xC59F08`** → `SetWindowLongPtrA(hwnd, GWLP_USERDATA, app)` → `RegisterDeviceNotificationA`.
-- App object globale: `0xC59F38` (puntatore), scritto dal costruttore `0x64A270` (default 1280×720).
-- WndProc `0x650440` (+ chunk `.pdata` chained `0x650491`, `0x6504C4`, `0x650512`): recupera `app` da
-  `GWLP_USERDATA`; gestisce `WM_CREATE(1)`, `WM_DESTROY(2)`, `WM_SIZE(5)`, `WM_ACTIVATE(6)`, `WM_CLOSE(0x10)`,
-  `WM_ERASEBKGND(0x14)`, `WM_GETMINMAXINFO(0x24)`, `WM_SYSKEYDOWN(0x104)`, `WM_DEVICECHANGE(0x219)`, messaggio
-  registrato `"PHYREMSG_HOSTHWND"`; il resto → `DefWindowProcA`.
-- **Nessun input in WndProc**: tastiera/mouse sono in polling (vedi `notes.md`, blocco 3). Implica che un
-  overlay ImGui deve anche bloccare il polling del gioco, non solo filtrare i messaggi.
+651E80 registers PhyreFrameworkClass with WndProc 650440, adjusts the rectangle
+and calls CreateWindowExA, unless params+30 already supplies a host HWND. It
+stores C59F08, sets GWLP_USERDATA to app, and registers device notifications.
+Global app pointer C59F38 is written by ctor 64A270, whose default dimensions
+are 1280×720.
 
-Punto più pulito per l'hook WndProc: `SetWindowLongPtrA(HWND@0xC59F08, GWLP_WNDPROC, …)` dopo che la finestra
-esiste. Nessuna necessità di patchare codice.
+WndProc 650440 and chained chunks 650491/6504C4/650512 retrieve app through
+GWLP_USERDATA. They handle WM_CREATE 1, WM_DESTROY 2, WM_SIZE 5, WM_ACTIVATE 6,
+WM_CLOSE 10, WM_ERASEBKGND 14, WM_GETMINMAXINFO 24, WM_SYSKEYDOWN 104,
+WM_DEVICECHANGE 219 and registered PHYREMSG_HOSTHWND; other messages reach
+DefWindowProcA. Gameplay keyboard/mouse input is polled, not handled here.
 
-## Oggetto renderer (static `0xBAD540`)
+A future overlay would need both WndProc event handling and suppression of game
+polling. A candidate WndProc interception is SetWindowLongPtrA on the actual
+HWND after creation, without patching game code. No overlay was implemented.
 
-Singleton lazy-init, accessor `0x4F6E30` (guard bit `0xBAECA0`), protetto da lock `0x4E7340`.
-Solo offset osservati; nessun nome di campo oltre a quanto dimostrato dall'uso.
+## Static renderer object BAD540
 
-| Offset | Uso osservato | Confidence |
+Lazy singleton accessor 4F6E30 uses guard BAECA0 and lock 4E7340. Only observed
+offsets are named below.
+
+| Offset | Observed use | Confidence |
 |---|---|---|
-| +0x94..+0xA0 | 4 dword copiati da `app+0xE08` prima dell'init (dimensioni?) | UNKNOWN (significato) |
-| +0xA8 | `ID3D11Device*` | CONFIRMED |
-| +0xB0 | `ID3D11DeviceContext*` (immediate) | CONFIRMED |
-| +0xB8 | `IDXGISwapChain*` | CONFIRMED |
-| +0xC0 | `DXGI_SWAP_CHAIN_DESC` (0x48 B) | CONFIRMED |
-| +0x108 | feature level ottenuto | CONFIRMED |
-| +0x110 | puntatore a `0xBF7CB8` (formato/descrittore RT?) | UNKNOWN |
-| +0x138 / +0x13C | width / height backbuffer (da `GetDesc`) | HIGH CONFIDENCE |
-| +0x148 | `ID3D11Texture2D*` backbuffer (array con count in +0x140) | HIGH CONFIDENCE |
-| +0x180 | `D3D11_TEXTURE2D_DESC` backbuffer | CONFIRMED |
-| +0x250 | oggetto render target backbuffer (RTV via `0x4F6EF0`) | HIGH CONFIDENCE |
-| +0x2F8 | oggetto depth target (DSV via `0x4F6A50`) | HIGH CONFIDENCE |
-| +0x638 | buffer `DRAWINDIRECT_ARGS` (solo FL ≥ 11_0) | CONFIRMED |
-| +0x1740 | byte VSync (SyncInterval) | CONFIRMED |
+| +94..A0 | Four dwords copied from app+E08 before initialization; possible dimensions | UNKNOWN meaning |
+| +A8 / +B0 / +B8 | D3D11 device / immediate context / DXGI swapchain | CONFIRMED |
+| +C0 | DXGI_SWAP_CHAIN_DESC, 48 bytes | CONFIRMED |
+| +108 | Returned feature level | CONFIRMED |
+| +110 | Pointer to BF7CB8, possibly an RT format/descriptor | UNKNOWN |
+| +138 / +13C | Backbuffer width/height from GetDesc | HIGH CONFIDENCE |
+| +148 | Backbuffer ID3D11Texture2D array, count at +140 | HIGH CONFIDENCE |
+| +180 | Backbuffer D3D11_TEXTURE2D_DESC | CONFIRMED |
+| +250 | Backbuffer RT object, RTV through 4F6EF0 | HIGH CONFIDENCE |
+| +2F8 | Depth object, DSV through 4F6A50 | HIGH CONFIDENCE |
+| +638 | DRAWINDIRECT_ARGS buffer for FL>=11_0 | CONFIRMED |
+| +1740 | VSync interval byte | CONFIRMED |
 
-## Render thread
+## Render thread and historical hook recommendation
 
-- Creazione: `0x531F50` → semafori `+0x2C0` (count 16) e `+0x2D0` (count 1), 16 slot, `0x5452B0`
-  (wrapper `CreateThread`, stack `0x10000`) con nome `"PhyreEngineRenderThread"`, entry `0x526D10`.
-- Loop `0x53F740`: nome thread `"RenderThread"`, ring di 16 command buffer, stato in `+0x28`
-  (0 = idle, 1 = esegui, 2 = esci).
-- Tutte le chiamate D3D11 del frame passano dal dispatcher `0x531570` (switch su tipo comando, 0x2B case).
-  Init, resize e shutdown avvengono invece dal main thread con il render thread fermo/sincronizzato.
+531F50 creates semaphores +2C0, count 16, and +2D0, count 1, with 16 slots.
+5452B0 wraps CreateThread with a 10000-byte stack and name
+PhyreEngineRenderThread, entry 526D10. Loop 53F740 names itself RenderThread;
+state +28 uses 0 idle, 1 execute, 2 exit. Frame D3D11 commands pass through the
+43-case, 2B, dispatcher 531570. Initialization, resize and shutdown instead run
+on the main thread with rendering synchronized.
 
-## Raccomandazione hook D3D11 per SAOHRFix
+The original preferred proposal was to capture the real swapchain through the
+D3D11CreateDeviceAndSwapChain IAT slot 7FEA88, or read BAD5F8 if initialization
+had already occurred. Then detour the actual vtable+40 Present and +68
+ResizeBuffers functions with MinHook, accounting for ReShade/Special K wrappers.
+Resize interception would be required to release overlay RTVs. The build-local
+4F5F10 wrapper/dispatcher case was considered useful for observation, not the
+primary overlay hook, because Present is a queued render-thread command.
 
-**Opzione A (vtable swapchain), con cattura del puntatore reale via IAT.** Non l'opzione B.
+Present runs on the render thread; WndProc and input polling run on the main
+thread. A future implementation would require safe input-state transfer and
+main-thread game-input suppression. These were proposals, not validated mod
+compatibility or a completed rendering feature.
 
-1. Da ASI caricato da Ultimate ASI Loader (già funzionante qui): hook dello slot IAT di
-   `d3d11!D3D11CreateDeviceAndSwapChain` in `sao_hr.exe` (IAT RVA `0x7FEA88`, è l'unico sito di creazione).
-   Se l'ASI arriva dopo la creazione: leggere `IDXGISwapChain*` da `0xBAD5F8` (fallback, build-specific).
-2. Sullo swapchain ottenuto: detour (MinHook) delle funzioni puntate da vtable `+0x40 Present` e
-   `+0x68 ResizeBuffers`. Non patchare la vtable: con ReShade/Special K lo swapchain può essere un wrapper.
-3. `ResizeBuffers` va hookato: il gioco lo chiama davvero (`0x4FAFA9`) → l'overlay deve rilasciare le sue RTV.
-
-Perché non B (`0x4F5F10` o il case del dispatcher):
-- Present è un **comando in coda** eseguito dal render thread via jump table: agganciare lì è build-specific
-  senza vantaggi, e non intercetta i Present di eventuali altri layer.
-- A funziona identico su build diverse, è lo standard atteso dagli altri layer (ReShade/SK) e da ImGui.
-- B resta utile solo come *punto di osservazione* (es. timing), non come hook principale.
-
-**Vincolo architetturale (da rispettare in Phase 1):** `Present` gira sul **render thread**, `WndProc` e il
-polling input del gioco sul **main thread**. L'overlay ImGui disegnerà sul render thread mentre gli eventi
-arrivano sul main thread → serve un passaggio di stato input thread-safe (coda/double buffer), e il blocco
-dell'input di gioco quando l'overlay ha il focus va fatto sul main thread.
-
-## Non ancora risolto (rimandato)
-
-- Altri due chiamanti di `CreateDXGIFactory`: `0x166540`, `0x6977C0` (usano anche `CreateShaderResourceView`).
-  Probabile enumerazione modalità per il menu opzioni. UNKNOWN, non bloccante.
-- Limiter FPS / delta time del main loop → blocco 7.
-- Mappa call site creazione risorse → `rendering.md`.
+Unresolved leads: extra factory callers 166540/6977C0, main-loop limiter/dt, and
+the preliminary resource-creation map in rendering.md.

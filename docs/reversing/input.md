@@ -1,166 +1,134 @@
 # Input
 
-Build: `sha256 1923f0d8…9e43`. RVA relative a `0x140000000`. Salvo diversa indicazione: **VANILLA STATIC**.
-MOVEMENT-01 runtime: caricamento raggiunto tramite mouse con Computer Use; gli impulsi
-di tastiera sintetici provati non hanno prodotto movimento misurabile. Movimento fisico
-dell'utente confermato tramite KCC/posizione e classificato dall'utente come tastiera;
-backend pad e percentuale stick ancora **UNKNOWN**. Prime prove analogiche invalide:
-il pad non rispondeva via Steam Input; hot plugging non verificato.
-Verifica UI successiva: Steam Input attivo, controller PlayStation riconosciuto,
-layout ufficiale AQURIA, stick sinistro assegnato a "Muovi". Processo con
-`steam_api64.dll`, `steamclient64.dll`, `gameoverlayrenderer64.dll` caricati.
-Avvio iniziale via `steam://rungameid/607890`; ulteriore riavvio tramite pulsante
-"Gioca" della libreria per separare il test del menu dalla cattura locomozione.
-Questi fatti non dimostrano che il backend pad del gioco riceva dati validi.
-L'utente ha poi confermato che il pad funziona dopo l'avvio dal pulsante "Gioca".
-**CONFIRMED, USER OBSERVATION**; causa del precedente mancato input **UNKNOWN**.
-Non attribuire la differenza al protocollo di avvio o all'hot plugging senza
-un confronto controllato.
-Questo non chiude INPUT-01 e non prova l'uso effettivo di Steam `ISteamController`.
-Nota: il modulo ha le relocation strippate → carica sempre a `0x140000000` (VA = `0x140000000 + RVA`), utile per i test runtime.
+Build SHA-256 `1923f0d8…9e43`, RVAs relative to `0x140000000`. Unless stated
+otherwise, this is VANILLA STATIC analysis. Later native limitations are in
+docs/sprint-01.md; no general INPUT-01 completion is claimed.
 
-## Pipeline ricostruita
+## Initial runtime observations
 
-```
-DirectInput8 (keyboard, mouse)          Steam Input / ISteamController (gamepad)       USER32 GetKeyboardState / GetKeyState
-      │                                          │                                            │
-reader thread "KbRead" / "MouseRead"      reader thread "PadRead"                         (key config / text input?)
-      │ (MicroThread, stato protetto da mutex)   │                                            │
-      ▼                                          ▼                                            ▼
-main thread, app "animate" 0x696020:  0x683140 (kbd)  0x687330 (mouse)  0x67EA70 (pad)  0x68FBE0 (GetKeyboardState)
-      │  ognuno: WaitForSingleObject(mutex) → latch/update → ReleaseMutex
-      ▼
-stato "pad virtuale" di gioco (layout PlayStation: Cross/Circle/Square/Triangle/StartOption/SelectShare/TouchPad/…)
-      ▼
-gameplay (0x165A10 = update gioco, chiamato subito dopo, da 0x696020)
-```
+MOVEMENT-01 reached loading through Computer Use mouse input. Early synthetic
+keyboard pulses produced no measurable movement. The user's physical keyboard
+movement was confirmed through KCC/position readings and identified by the user
+as keyboard input. Initial analog captures were invalid when the controller did
+not respond through Steam Input; hot plugging remained unverified.
 
-Il gioco è un port PS4/Vita: il gameplay ragiona su un pad virtuale stile PlayStation (`CSysPad`), la tastiera
-arriva su quel pad tramite key config (`CUiKeyConfigWin32`, `CKeyConfigWin32Proc`, `key_config*.dat`).
+The UI later showed Steam Input enabled, a recognized PlayStation controller,
+the official AQURIA layout and left stick assigned to Move. steam_api64.dll,
+steamclient64.dll and gameoverlayrenderer64.dll were loaded. Initial launch used
+steam://rungameid/607890; a later restart used Steam's Play button. The user then
+confirmed working controller input. This is CONFIRMED USER OBSERVATION, with
+cause UNKNOWN. It does not prove that the launch protocol or hot plugging caused
+the difference, or that the sample ISteamController path below was used.
+
+The main module has stripped relocations, so this build loads at 140000000.
+
+## Reconstructed pipeline
+
+DirectInput8 keyboard/mouse reader threads, the Steam/gamepad reader PadRead,
+and the USER32 keyboard-state path latch their protected state on the main
+thread inside app animate 696020. The latch calls are keyboard 683140, mouse
+687330, pad 67EA70 and GetKeyboardState 68FBE0. Gameplay update 165A10 follows
+those latches. Each relevant reader/latch uses its own mutex.
+
+The PS4/Vita-derived gameplay operates on a PlayStation-style logical CSysPad,
+with Cross/Circle/Square/Triangle/StartOption/SelectShare/TouchPad names.
+Keyboard input reaches this logical pad through CUiKeyConfigWin32,
+CKeyConfigWin32Proc and key_config*.dat, rather than bypassing game mapping.
 
 ## DirectInput
 
-| Elemento | RVA / valore | Confidence |
+| Item | RVA / behavior | Confidence |
 |---|---|---|
-| `DirectInput8Create` | `0x64F8A0` @ `0x64F8CB` (thunk `0x6EA76C`), chiamato dall'init app `0x6550A0` | CONFIRMED |
-| `IDirectInput8*` | globale **`0xC59F18`** | CONFIRMED |
-| Enumerazione | `EnumDevices(DI8DEVCLASS_ALL, cb=0x64E250, NULL, DIEDFL_ATTACHEDONLY)` | CONFIRMED |
-| Callback | `dwDevType & 0xFF`: `0x13` keyboard → `0x64F760`; `0x12` mouse → `0x64F7F0`; **qualsiasi altro tipo ignorato** | CONFIRMED |
-| Keyboard | `CreateDevice` → `SetDataFormat(0x8C22F8 = c_dfDIKeyboard, 256 B)` → `SetCooperativeLevel(HWND, 6 = NONEXCLUSIVE\|FOREGROUND)` → `Acquire` → wrapper `PFramework::PInputDeviceKeyboard` (0x150 B, ctor `0x64A870`, vtable `0x8AD1C0`) | CONFIRMED |
-| Mouse | come sopra, `SetDataFormat(0x8C22D8 = c_dfDIMouse2: 20 B, 11 oggetti)`, coop 6 → wrapper `PFramework::PInputDeviceMouse` (0x200 B, ctor `0x64A910`, vtable `0x8AD188`) | CONFIRMED |
-| Joystick/gamepad DirectInput | **nessuno** (filtrato dalla callback) | CONFIRMED |
-| Poll keyboard | `PInputDeviceKeyboard::vfunc[5]` = **`0x657840`**: `GetDeviceState(256)`; su errore azzera stato e ri-`Acquire` finché `DIERR_INPUTLOST`; su successo mappa 96 key-code engine tramite tabella DIK `0xA625C0` in `this+0xF0` (held), poi `0x6577A0` (edge: probabilmente `+0x30`/`+0x90` pressed/released) | CONFIRMED (poll) / PROBABLE (semantica dei 3 array da 0x60 B) |
-| Poll mouse | `0x657A21` (chunk di `PInputDeviceMouse`): `GetCursorPos` + `GetWindowRect` + `GetClientRect` + `GetWindowInfo` + `ScreenToClient`; posizione assoluta client ×255 in `+0x1F0/+0x1F4`, `+0x1F8`; pulsanti (bit 7 di `rgbButtons`) in `+0x1FC..+0x1FE` | CONFIRMED |
-| `Unacquire` / `GetDeviceData` (buffered) | non trovati nel percorso di poll: solo stato immediato | PROBABLE |
+| DirectInput8Create | 64F8A0, call 64F8CB, thunk 6EA76C, from app init 6550A0 | CONFIRMED |
+| IDirectInput8 pointer | C59F18 | CONFIRMED |
+| Enumeration | EnumDevices(DI8DEVCLASS_ALL,64E250,NULL,DIEDFL_ATTACHEDONLY) | CONFIRMED |
+| Device filter | dwDevType low byte 13 keyboard → 64F760; 12 mouse → 64F7F0; all others ignored | CONFIRMED |
+| Keyboard creation | CreateDevice, c_dfDIKeyboard at 8C22F8, 256 bytes, cooperative flags 6 NONEXCLUSIVE/FOREGROUND, Acquire; PInputDeviceKeyboard size 150, ctor 64A870, vtable 8AD1C0 | CONFIRMED |
+| Mouse creation | c_dfDIMouse2 at 8C22D8, 20 bytes/11 objects, flags 6; PInputDeviceMouse size 200, ctor 64A910, vtable 8AD188 | CONFIRMED |
+| Generic joystick/gamepad DirectInput | None, rejected by enumeration filter | CONFIRMED |
+| Keyboard poll | vfunc[5] 657840, GetDeviceState(256); clears state and reacquires on DIERR_INPUTLOST; maps 96 engine codes through DIK table A625C0 into this+F0 held state, then edge helper 6577A0 | CONFIRMED poll; arrays +30/+90 pressed/released semantics PROBABLE |
+| Mouse poll | 657A21, GetCursorPos/GetWindowRect/GetClientRect/GetWindowInfo/ScreenToClient; client coordinates scaled by 255 to +1F0/+1F4, +1F8; button bit7 to +1FC..1FE | CONFIRMED |
+| Buffered GetDeviceData / Unacquire | Not found in the polling path | PROBABLE immediate-state-only path |
 
-## Controller: Steam Input (ISteamController)
+## Steam Input / ISteamController candidate path
 
-- Nessun XInput, nessun HID, nessun joystick DirectInput → l'unico percorso gamepad nel binario è **Steamworks
-  `ISteamController`** (`"SteamController005"`, classe `PFramework::PInputDevicePadSteamController`,
-  test `CSteamControllerTest`). CONFIRMED (per esclusione + stringhe/RTTI).
-- Init `0x683E40`: `GetActionSetHandle("ship_controls"/"menu_controls")`, `GetDigitalActionHandle(turn_left,
-  turn_right, forward_thrust, backward_thrust, fire_lasers, pause_menu, menu_up/down/left/right/select/cancel)`,
-  `GetAnalogActionHandle("analog_controls")`. Offset vtable `+0x28/+0x40/+0x58` coerenti con `SteamController005`.
-- Poll `0x684110` (+ chunk `0x684181`): `ActivateActionSet` (`+0x30`), 5× `0x684540` (digital action data),
-  log `"Controller (%d) has been disconnected."`.
-- ⚠️ **Questi sono i nomi del sample Valve "SpaceWar"/SteamworksExample.** Due possibilità, non distinguibili
-  staticamente: (a) il gioco pubblica davvero un action manifest con quei nomi riutilizzati; (b) è codice di
-  esempio mai usato e il gamepad arriva da un altro percorso. → **PROBABLE**, test `INPUT-01`.
-- Thread `"PadRead"` + mutex `"PadMutex"` (`0xC69070`) creati da `0x67E870`; latch sul main thread `0x67EA70`
-  (→ `0x67D640`, `0x67E4C0`).
-- Deadzone, rappresentazione interna di stick/trigger/L3/R3: **UNKNOWN**. Con Steam Input, L3/R3 e deadzone sono
-  in gran parte configurati lato Steam; il gioco vede action, non tasti fisici.
+No XInput, HID or generic joystick DirectInput path was found in the game
+binary. Steamworks SteamController005 and PInputDevicePadSteamController /
+CSteamControllerTest are present. Their presence is CONFIRMED; actual use of
+the following sample-named code remains PROBABLE, pending INPUT-01.
 
-Conseguenza per Sprint su gamepad: un bind "L3" non si intercetta con API Windows; va letto dallo stato pad
-virtuale del gioco (dopo il latch) oppure aggiunto come action Steam. Da decidere dopo `INPUT-01`.
+683E40 obtains action sets ship_controls/menu_controls and digital actions
+turn_left, turn_right, forward_thrust, backward_thrust, fire_lasers, pause_menu,
+menu_up/down/left/right/select/cancel, plus analog_controls. Vtable offsets
++28/+40/+58 match SteamController005. Poll 684110, chunk 684181, activates an
+action set at +30 and performs five 684540 digital reads. It logs controller
+disconnection. These are Valve SpaceWar sample names; either the game reuses
+them in its manifest or the sample code is unused. Static evidence does not
+resolve that distinction.
 
-## USER32 polling aggiuntivo
+67E870 creates PadRead and PadMutex, handle C69070. Main-thread latch 67EA70
+calls 67D640/67E4C0. Physical stick/trigger/L3/R3 encoding and deadzones remain
+UNKNOWN. Steam may transform physical buttons into actions. A future L3 bind
+must identify the consumed logical state or an appropriate Steam action; raw
+Windows polling does not establish what the game receives.
 
-| API | Sito | Note |
+## Additional USER32 polling
+
+| API | Sites | Interpretation |
 |---|---|---|
-| `GetKeyboardState` | `0x68EE20` @ `0x68F3AC` (sotto mutex `0xC6BF80`, chiamato da `0x68FBE0` ogni frame) e `0x6903B0` @ `0x6904A7` | percorso tastiera **indipendente** da DirectInput (key config / testo?) — scopo PROBABLE |
-| `GetKeyState` | `0x6828F0` @ `0x68294B` | probabilmente toggle (CapsLock/NumLock) |
-| `GetCursorPos` / `ScreenToClient` | `0x657A21` | posizione mouse assoluta |
-| `GetAsyncKeyState` | **non importato** | CONFIRMED |
-| `SetWindowsHookExA` | `0x695990` @ `0x6959E4` | tipo hook UNKNOWN (IME / tasti di sistema?) |
-| Raw Input | non importato | CONFIRMED |
+| GetKeyboardState | 68EE20, call 68F3AC under mutex C6BF80, latched by 68FBE0; also 6903B0, call 6904A7 | Independent of DirectInput; key configuration/text purpose PROBABLE |
+| GetKeyState | 6828F0, call 68294B | Probably toggle state such as CapsLock/NumLock |
+| GetCursorPos / ScreenToClient | 657A21 | Absolute client mouse position |
+| GetAsyncKeyState | Not imported by the game | CONFIRMED |
+| SetWindowsHookExA | 695990, call 6959E4 | Hook type/purpose UNKNOWN |
+| Raw Input | Not imported | CONFIRMED |
 
-WndProc (`0x650440`) **non** processa tastiera/mouse (vedi `graphics.md`).
+WndProc 650440 does not process gameplay keyboard/mouse input. See graphics.md.
 
-## Action mapping
+## Logical mapping and threads
 
-- PhyreEngine fornisce `PInputs::PInputMap/PInputAction/PInputSource*` e `PFramework::PInputMapper` (RTTI presenti).
-  Uso effettivo da parte del gameplay: **UNKNOWN** (possono essere solo metadati di reflection linkati).
-- Layer di gioco: `CSysInputDevice` (vtable `0x8B4D48`), `CSysKeyboard` (`0x8B48A8`), `CSysPad` (`0x8B4840`),
-  key config `CUiKeyConfigWin32` / `CUiKeyConfigGamepadWin32` / `CKeyConfigWin32Proc`; nomi tasti `Key_*`,
-  nomi pulsanti PS (`Cross`, `Circle`, …). Conclusione: **esiste un layer di mapping fisico → pad virtuale**;
-  struttura e numero di action: UNKNOWN.
+Phyre PInputs::PInputMap/PInputAction/PInputSource* and PInputMapper RTTI exists,
+but gameplay use is UNKNOWN. Game-level classes include CSysInputDevice,
+vtable 8B4D48; CSysKeyboard 8B48A8; CSysPad 8B4840; keyboard/gamepad key-config
+UI and CKeyConfigWin32Proc. A physical-to-logical mapping layer exists, but its
+complete layout/action count was not recovered.
 
-## Thread
+Reader thread roles are HIGH CONFIDENCE from names/mutexes. Main-thread latch
+locations and their ordering before gameplay are CONFIRMED. A future overlay
+could intercept the four main-thread latches, preserving reader consistency
+under the existing mutexes. Whether to clear or skip mapped input was not
+decided or implemented. Filtering WndProc alone would not suppress gameplay.
+Main-thread WndProc events and render-thread overlay drawing would require safe
+state transfer, such as a queue/double buffer.
 
-| Funzione | Thread | Confidence |
-|---|---|---|
-| Poll DI keyboard/mouse, poll Steam pad | reader thread dedicati (`KbRead`, `MouseRead`, `PadRead`) | HIGH (nomi + mutex) |
-| Latch stato input (`0x683140`, `0x687330`, `0x67EA70`, `0x68FBE0`) | main thread, dentro `animate` `0x696020` | CONFIRMED |
-| Gameplay update (`0x165A10`) | main thread, subito dopo i latch | CONFIRMED (ordine di chiamata) |
+## Proposed INPUT-01, not completed
 
-## Implicazioni per l'overlay ImGui (Phase 1)
+Purpose: establish whether 684110 supplies actual gamepad data. The historical
+proposal was to attach x64dbg after Steam launch, observe 684181/684540 while
+moving and pressing A, record a short call stack, remove breakpoints, and compare
+Steam Input enabled/disabled. No invasive anti-debug bypass is authorized or
+implied by this historical proposal. The game uses Steam CEG/IsDebuggerPresent;
+an attach failure must be recorded rather than bypassed.
 
-- Punto di blocco raccomandato: i **4 latch sul main thread** (`0x683140`, `0x687330`, `0x67EA70`, `0x68FBE0`).
-  Con overlay aperto: eseguire il latch originale (tiene coerenti i reader thread) e poi azzerare lo stato di gioco,
-  oppure saltarlo. Da decidere dopo aver visto il layout dello stato (runtime).
-- Non basta filtrare la WndProc: il gioco non legge input da lì.
-- ImGui prende input dalla WndProc (main thread) e disegna sul render thread → coda/double-buffer (vedi `architecture.md`).
-- Rischio race: nessuno aggiuntivo se il blocco avviene dentro il latch (già sotto mutex, già sul main thread).
+Candidate interpretations were: breakpoint hit plus no pad without Steam Input
+would support the Steam path; no hit would require following another path from
+67EA70. These outcomes were not collected as a completed INPUT-01.
 
-## Test runtime
+## MOVEMENT-01/02 consumed analog input, October 1, 2026
 
-### TEST ID: INPUT-01
+CONFIRMED static: 205BC0 gets the axis object through 1CE560, calls 2D0290 and
+2D04D0 with history 0, and retains signed16 axes in R12D/R15D. Input ring
+C66D60 has 64 records of 8C bytes, with X/Y at +80/+82; history count C69060,
+cursor C69068. With history active, latest slot is (cursor-1)%64; count zero
+selects the base record. Axis-object+70E may invert the sign.
 
-Purpose: stabilire se il percorso Steam Input (`0x684110`) è quello che fornisce davvero il gamepad.
+CONFIRMED runtime: an Xbox virtual pad through the pre-existing ViGEmBus,
+connected before Steam launch, produces internal axes and movement. It does
+not establish a new XInput path inside the game. Requested software percentages
+are not consumed-axis percentages.
 
-Prerequisiti: x64dbg (portable, gratuito). `tools\mods.ps1 off`. Controller collegato.
-Steam avvia il gioco normalmente; **attaccare** x64dbg al processo già avviato (evita il relaunch di
-`SteamAPI_RestartAppIfNecessary`). Il gioco usa Steam CEG / `IsDebuggerPresent`: se crasha all'attach, annotarlo.
-
-Steps:
-1. Avvia il gioco, arriva al controllo del personaggio.
-2. x64dbg → Attach `sao_hr.exe`. Imposta breakpoint su `0x140684181` e `0x140684540`. Continua (F9).
-3. Muovi lo stick sinistro e premi Cross/A.
-4. Se scatta: annota lo stack (3 livelli) e rimuovi i breakpoint. Se non scatta entro ~10 s: annotalo.
-5. Ripeti una volta con la **Steam Input disattivata** per il gioco (Proprietà gioco → Controller → Disattiva Steam Input) e verifica se il pad funziona ancora in gioco.
-
-Collect:
-- scatta sì/no (con Steam Input attiva);
-- il pad funziona sì/no con Steam Input disattivata;
-- screenshot del call stack se scatta.
-
-Expected useful outcomes:
-A. Scatta + pad morto senza Steam Input → Steam Input è l'unico percorso; Sprint su pad = action/stato pad virtuale.
-B. Non scatta → esiste un altro percorso (da cercare a partire dal latch `0x67EA70`).
-
-Return to me: le due risposte sì/no + call stack.
-
-VANILLA RUNTIME.
-
-## MOVEMENT-01/02: asse consumato, aggiornamento 1 ottobre 2026
-
-**CONFIRMED, static:** `0x205BC0` ottiene l'oggetto assi tramite `0x1CE560`,
-chiama `0x2D0290`/`0x2D04D0` con storico 0 e conserva gli assi signed16 in
-R12D/R15D. Ring `0xC66D60`, 64 record di `0x8C`, X/Y a `+0x80/+0x82`;
-conteggio `0xC69060`, cursore `0xC69068`. Con storico attivo, slot `(cursor-1)%64`;
-con conteggio zero, record base. L'oggetto può invertire il segno tramite `+0x70E`.
-
-**CONFIRMED, runtime:** Xbox virtuale ViGEm, mantenuto collegato durante l'avvio
-da Steam, produce assi interni e movimento. Il gioco continua a consumare il
-proprio percorso Steam; il pad virtuale non implica un nuovo percorso XInput nel gioco.
-I valori software richiesti non equivalgono a percentuali dell'asse interno.
-
-Nel ramo analogico `0x20646A`, R12D diventa X² e R15D X²+Y². Il trace del
-setter `0x1E9980`, return `0x1E993F`, outer return `0x206660`, intercetta
-questa magnitudine realmente consumata. Applicare l'interpretazione soltanto
-a questi caller verificati. Segni degli assi persi a questo punto.
-
-Polling ring, eventi del setter e submission KCC hanno fasi/thread differenti:
-nessun record è presentato come frame atomico completo. Metodo, risultati e
-limiti in [movement-report.md](movement-report.md); INPUT-01 generale non eseguito.
+At analog branch 20646A, R12D becomes X² and R15D X²+Y². The 1E9980 setter
+trace with return 1E993F and outer return 206660 captures that consumed magnitude.
+This interpretation applies only to those verified callers. Ring polling,
+setter events and KCC submissions differ in phase/thread and are not atomic
+frame snapshots. See movement-report.md for thresholds, results and limitations.

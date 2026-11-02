@@ -1,30 +1,39 @@
-# Roadmap
+# Historical roadmap
 
-## Phase 0 — Reverse engineering & reconnaissance (in corso)
+Research and development are discontinued because the author finished the game
+and does not want to spend more time on the project. This plan is retained for
+context, not as a commitment to implement the remaining features.
 
-Blocchi, nell'ordine di esecuzione:
+## Phase 0, reverse engineering and reconnaissance
 
-| # | Blocco | Output | Stato |
+| Block | Area | Existing output | Final status |
 |---|---|---|---|
-| 1 | Build identification + imports | `reversing/build.md` | ✅ fatto |
-| 2 | D3D11 / render loop | `reversing/graphics.md` | ✅ fatto |
-| 3 | Input + player movement | `reversing/input.md`, `reversing/player.md` | 🟡 statica fatta, attende test runtime MOVEMENT-01/02, INPUT-01, STATE-01 |
-| 4 | Audio (CRI ADX2 / WASAPI) | `reversing/audio.md` | ⬜ |
-| 5 | Filesystem / loading (CPK) | `reversing/filesystem.md`, `reversing/loading.md` | ⬜ |
-| 6 | Render target / buffer | `reversing/rendering.md`, `reversing/temporal-readiness.md` | ⬜ |
-| 7 | Camera + timing | `reversing/camera.md`, `reversing/timing.md` | ⬜ |
-| 8 | Consolidamento | `phase-0-report.md` | ⬜ |
+| 1 | Build identification and imports | `reversing/build.md` | Completed within documented scope |
+| 2 | D3D11 and render loop | `reversing/graphics.md` | Completed within documented scope |
+| 3 | Input and player movement | `reversing/input.md`, `reversing/player.md`, `reversing/movement-report.md` | Extensive static/runtime research; SLOPE-07B approved a first Sprint implementation, not production safety |
+| 4 | Audio, CRI ADX2 / WASAPI | No dedicated report | Not started |
+| 5 | Filesystem/loading, CPK | No dedicated report | Not started |
+| 6 | Render targets/buffers | Preliminary `reversing/rendering.md` | Temporal readiness not established |
+| 7 | Camera and timing | Findings within existing reports | No completed dedicated reports |
+| 8 | Consolidation | This archive and the existing reports | No original Phase 0 completion report |
 
-Definition of Done: vedi §20 del brief — per ogni area serve *cosa sappiamo / cosa non
-sappiamo / migliore ipotesi / test successivo più economico*.
+The research reporting rule was to separate what is known, what is unknown,
+the best current hypothesis and the cheapest useful next test.
 
-## Fasi successive (non iniziare in Phase 0)
+## Unfinished native Sprint preview
 
-- **Phase 1** — framework SAOHRFix: loader, hook Present, overlay ImGui, config.
-- **Phase 2** — gameplay/QoL: sprint, FOV, camera distance, hot-swap audio device.
-- **Phase 3** — filesystem: VFS con override asset, cache/prefetch, fast loading.
-- **Phase 4** — grafica: remaster asset, DLAA/DLSS/FSR/XeSS.
-- **Phase 5** — sperimentale: bridge D3D12, Frame Generation, ray tracing.
+SPRINT-01/01B added a native Windows x64 loader/core, configuration, input logic,
+hooks and A+C movement prototype. Debug/Release build, but no native Sprint extra
+was accepted in the live tests. See [sprint-01.md](sprint-01.md) for the exact
+parameter guard, L3/UI limits and Debug initialization issue.
 
-Ogni fase dipende da risposte prodotte in Phase 0; niente implementazione finché l'area
-corrispondente non è almeno `HIGH CONFIDENCE`.
+## Proposed later phases, not completed
+
+- Phase 1: SAOHRFix framework, Present hook, ImGui overlay and configuration.
+- Phase 2: gameplay/QoL, Sprint, FOV, camera distance and audio-device hot swap.
+- Phase 3: filesystem, asset overrides through a VFS, caching/prefetch and loading.
+- Phase 4: graphics, remastered assets and DLAA/DLSS/FSR/XeSS.
+- Phase 5: experimental D3D12 bridge, Frame Generation and ray tracing.
+
+These proposals depend on research that was never completed. Their presence in
+the roadmap does not imply implementation, compatibility or readiness.

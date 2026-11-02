@@ -1,9 +1,10 @@
 # SPRINT-01 development preview
 
 Windows x64 native prototype. This document describes implementation, not
-production safety. The research acceptance is COLLISION-SLOPE-07B in the original
-research checkout. This feature branch starts at the committed research baseline;
-the original checkout's staged and unstaged research changes remain separate.
+production safety. The research acceptance is COLLISION-SLOPE-07B in
+[movement-report.md](reversing/movement-report.md). This archive includes both
+the research tools and the unfinished native implementation. The original
+research and feature worktrees were preserved separately during publication.
 
 **SPRINT-01B BLOCKED. Do not enable this prototype for normal play.** Left Shift
 Hold is now observed requesting and releasing Sprint. In the current save the
@@ -196,7 +197,7 @@ bf98a5293ded7278b0e4a41f968e540b44abedad4d17ae459dd372a075848448.
 Audio, graphics features and ImGui are absent. Town/combat, engine object
 destruction races, physical bindings and mod compatibility remain unvalidated.
 
-## Git handoff
+## Historical Git handoff
 
 Implementation is isolated in branch sprint-01 at C:/Users/Maicol/SAOHRFix-sprint-01.
 The first signed commit failed with `1Password: failed to fill whole buffer`.

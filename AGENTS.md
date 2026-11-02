@@ -1,5 +1,10 @@
 # SAOHRFix
 
+Discontinued research archive with an unfinished native Sprint prototype.
+The author finished the game and stopped development; there is no active task.
+Future work requires an explicit request. Read README.md and docs/sprint-01.md
+for the final state before treating historical readiness statements as current.
+
 PC/Steam Hollow Realization reverse engineering, Phase 0. Python 3.14 in `.venv`,
 pefile/Capstone, PowerShell tools. Existing Git history and `docs/reversing/` are
 the technical baseline. Use RVAs plus verified build-local signatures.
@@ -13,10 +18,18 @@ the technical baseline. Use RVAs plus verified build-local signatures.
 - Runtime vanilla: reversibly disable local mods with `tools/mods.ps1`, stop
   global injection via SKIF, launch via Steam. Preserve and restore prior state.
 - Prefer read-only process inspection. No automatic invasive anti-debug bypass.
-- Current task is MOVEMENT-01/02. No Audio, Sprint implementation, INPUT-01 or
-  STATE-01 until the movement prerequisites are satisfied.
+- Preserve the archive's evidence and confidence labels. Do not present the
+  unfinished native Sprint preview as playable or production-safe.
 
-Current findings are in `docs/reversing/movement-report.md` and `player.md`.
+The final findings are in `docs/reversing/movement-report.md` and
+`docs/sprint-01.md`. Research reached SLOPE-07B readiness, but the native
+SPRINT-01B prototype remains BLOCKED with zero accepted extras. Do not resume
+development or game interaction without a new explicit request.
+
+## Historical research notes
+
+The following notes preserve earlier checkpoints. Their readiness statements
+are historical; the report and native handoff above contain the final status.
 Virtual Xbox input works through Steam with the existing ViGEmBus; use
 `virtual_pad.py` rather than asking for imprecise physical stick positions.
 Its percentages are not the internal axis values: measure consumed input.
