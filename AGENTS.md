@@ -67,8 +67,18 @@ the original locomotion parameter, then optionally adds a native capsule-
 preflighted physical substep; flat extra is 25%, with owner sync observed.
 Two trials avoid the large ascent, but the second reaches Y=1.704 versus
 vanilla controls near 1.595, during the first native step with no extra.
-Causality is unresolved; the sole blocker is first-contact equivalence and
-stability after earlier extras. No production Sprint; see SLOPE-04 for limits.
+SLOPE-05 captures QPC in the player stream, actual 69B4C0 return at 1F6ADF,
+9FE8/9F2C/4E0, native direction and physical state. Workers rotate; same-thread
+gaps are not player cadence. Three instrumented vanilla trials peak at
+1.659/1.902/5.236; dry-run (no second step) at 5.794. Two A+C trials peak
+1.594/1.598 with comparable dt scalars (~4), not the historical X delta 2.625.
+Historical last extra was producer13/seq1327, 44 producers before peak57.
+Classification F/UNKNOWN: the sole blocker is capturing that integration
+outlier with consumed dt and upstream branch to determine its cause.
+SLOPE-06 verifies 69B4C0: C82FAC==1 selects A63248*60, otherwise A63240;
+return is XMM0. Bounded V/D/A captures do not reproduce the historical
+integration outlier; classification remains F/UNKNOWN. See movement-report.
+No timing compensation, new filter/latch or production Sprint.
 SKIF native Stop/Start resolved its inaccessible UI on 2026-10-02. The user
 identified the historical lane as Anticamera delle Grandi Pianure Rastoria.
 Direct teleport to Anticamera is verified from the Rustoria regional map;
@@ -77,8 +87,13 @@ bit-identical; use the report's exact starts and exclusions. mods.ps1 regex corr
 Animation return perturbation is player-channel-only, clip 122 only; factor
 1.25 best matches baseline distance/phase, but direct foot sliding is unmeasured.
 Selector 1 / parameter 0.109005 / clip 100122 is outside the verified FF/FE
-context and must not count as an effective multiplier test. Lifecycle transitions,
-tight turns, slopes/stairs and town/combat remain deferred. Sprint is NOT READY.
+context and must not count as an effective multiplier test. SLOPE-07 has 24
+formal geometry sanity captures (S1-S8), no outlier, with unchanged A+C.
+Stairs mainly exercise vanilla fallback; see the report's coverage limits.
+Fast travel teardown/reacquisition is verified, but an accepted A+C extra on
+the reacquired FF/FE instances remains unverified after the user's Computer Use
+stop. This is the remaining readiness gate; do not repeat S1-S8 unnecessarily.
+Town/combat and production lifecycle remain deferred. Sprint is NOT READY.
 Runtime clamps are 0/60; actual world position is Bullet ghost+40. Downstream
 animation rate getter 6C6C80 -> 2888CC -> channel+1D0 -> 56E530 identified.
 Run each new tool's `self-check` before live use; never install drivers implicitly.

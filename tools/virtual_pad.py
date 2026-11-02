@@ -1,6 +1,7 @@
 """Temporary Xbox pad on the existing ViGEmBus. JSON commands on stdin.
 
 Example: {"x":0,"y":0.25,"seconds":3,"buttons":0}
+Optional paired rx/ry axes control the camera during reconnaissance.
 Only virtual input is written. Every command ends at neutral, including failures.
 Closing stdin disconnects the device. No driver installation or game patch.
 """
@@ -24,9 +25,11 @@ def axis(value: object) -> int:
 
 
 def pulse(pad: vg.VX360Gamepad, command: dict[str, object]) -> None:
-    if set(command) != {"x", "y", "seconds", "buttons"}:
-        raise ValueError("Expected exactly x, y, seconds, buttons")
+    fields = {"x", "y", "seconds", "buttons"}
+    if set(command) not in (fields, fields | {"rx", "ry"}):
+        raise ValueError("Expected x, y, seconds, buttons and optionally both rx, ry")
     x, y = axis(command["x"]), axis(command["y"])
+    rx, ry = axis(command.get("rx", 0)), axis(command.get("ry", 0))
     seconds, buttons = command["seconds"], command["buttons"]
     if isinstance(seconds, bool) or not isinstance(seconds, (int, float)):
         raise ValueError("seconds must be a number")
@@ -36,6 +39,7 @@ def pulse(pad: vg.VX360Gamepad, command: dict[str, object]) -> None:
         raise ValueError("buttons must be an integer within 0..65535")
     try:
         pad.left_joystick(x_value=x, y_value=y)
+        pad.right_joystick(x_value=rx, y_value=ry)
         pad.report.wButtons = buttons
         pad.update()
         print(json.dumps({"status": "active", "x": x, "y": y,

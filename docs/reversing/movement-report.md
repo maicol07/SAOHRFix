@@ -3,12 +3,12 @@
 **Aggiornamento:** le sezioni fino a “Baseline readiness” conservano il report
 manuale del commit `ddca350`. Le conclusioni correnti, che sostituiscono le sue
 incertezze e lo stato finale storico, iniziano da “Analog input path”.
-La decisione finale corrente è in **“COLLISION-SLOPE-04 — 2026-10-10”**:
-**NOT READY**. Gli store della Y terreno sono identificati direttamente.
-Il candidato vanilla-first con extra fisico separato evita la grande ascesa
-nelle due prove, ma la seconda supera la fascia verticale dei controlli.
-Resta un blocker: equivalenza e stabilità del primo contatto vanilla negli
-update successivi agli extra. La causalità del nuovo picco non è dimostrata.
+La decisione research corrente è in **“COLLISION-SLOPE-07B”**:
+**COLLISION-SLOPE: CLOSED pragmatically — READY FOR SPRINT IMPLEMENTATION**.
+SLOPE-06/07/07B autorizzano una prima implementazione, senza certificarne la
+sicurezza production. **Historical integration outlier: UNKNOWN, not reproduced**.
+Lo stato della nuova implementazione è distinto: vedere **“SPRINT-01 — native
+development preview”** in fondo al report.
 
 Data: 1 ottobre 2026. Build Steam PC, SHA-256
 `1923f0d8d2cad559d6ad6e001af54ea5ea5aa70171323f42d4e1fa3d63699e43`.
@@ -2005,3 +2005,713 @@ parse dei due TOML research e `git diff --check` passati. SHA-256 EXE
 invariata: `1923f0d8d2cad559d6ad6e001af54ea5ea5aa70171323f42d4e1fa3d63699e43`.
 Il nuovo trace non raccoglie direttamente ogni native walkable predicate o
 recovery event: nessuna conclusione aggiuntiva su quei rami oltre SLOPE-03.
+
+### COLLISION-SLOPE-05 — 2026-10-10
+
+**NOT READY. Classificazione finale del producer storico 57: F — UNKNOWN.**
+Il blocker è più ristretto: **catturare nuovamente integration X≈2.625 con
+return effettivo di `69B4C0` e ramo/scalar upstream nello stesso producer**.
+La quota 1.704 non è una firma sufficiente di regressione A+C: nuove prove
+senza extra la superano. Le due nuove prove A+C non mostrano timing alterato,
+ma nessuna riproduce il grande delta storico. Non attribuirlo al secondo
+wrapper, né dichiarare equivalenza assoluta dalla piccola serie.
+
+#### Trace temporale e catena consumata
+
+Estensione bounded di `terrain_trace.py`: ring 8192 × 1024 byte, nuove copie
+private del solo integratore player e shim osservativi. Originali preservati,
+nessuna modifica a Y, normale, recovery, projection, eligibility o animation.
+
+**CONFIRMED static:** il percorso ordinario chiama `69B4C0` a **`1F6ADF`**,
+moltiplica il return per `+9FE8` a `1F6AE7`; il ramo `+4E0=0` usa
+`+9F24 + scalar * +9F2C`, poi il prodotto per scalar, e la direzione
+target-current. `A047&4==0` elimina Y dalla direzione. **`1F6EA4 -> 1AD750`**
+restituisce la direzione normalizzata; `1F6EC4` assegna integration.
+La funzione originale continua con i propri rami successivi: non confondere
+sempre l'intero delta finale con il solo store `1F6EC4`.
+
+Il trace registra direttamente:
+
+- QPC dentro ogni evento (entry verificato leggendo gli stessi 32 byte nel
+  processo target, frequency 10 MHz), sequence e thread;
+- app dt `A63238`, reciproco `A6323C`, clamped step `A63240`, massimo `A63244`;
+- **return realmente consumato di `69B4C0`**, non stimato dai poll;
+- `+9FE8`, `+9F2C`, `+4E0`, parametro, target/current, normalized return,
+  integration prima/dopo e query effettiva;
+- ghost e KCC requested/direction/current/target, `C0..CF`, normal `D0`,
+  `E0..EF` prima/dopo physical action e preStep; callback `+60` originale.
+
+I worker ruotano. Per il player, intervallo = differenza fra QPC di setter
+consecutivi ordinati; il gap dello stesso thread è un dato separato, non
+la cadenza del player. `interval-vanilla-02` precede questa correzione del
+campo derivato: la sua cadenza è ricostruita dai QPC già presenti, senza
+usare il vecchio campo per-thread come intervallo player.
+
+History bounded degli ultimi otto extra: producer/sequence, QPC all'ingresso
+del secondo wrapper, ghost prima/dopo, displacement e wrapper eseguito;
+conteggio extra dal producer precedente e distanza temporale/logica.
+Il timestamp dell'extra è l'ingresso, non un timestamp separato di fine call.
+I campi derivati `integration_delta`, direction, extra displacement e distanza
+producer sono stati aggiunti al serializer dopo le catture: i medesimi valori
+sono ricavati dai before/after e timestamp dei record salvati.
+
+#### History dell'evento storico
+
+**CONFIRMED dalla cattura SLOPE-04:** ultimo extra prima del producer 57 =
+**producer 13, seq1327**, ghost
+(-17.35886574, 1.40482700, 131.52696228) ->
+(-17.52832413, 1.40482700, 131.52799988).
+Requested extra=(-0.169458881, 0, 0.001041412, 0).
+Setter57 seq1846 dista **44 producer e 519 sequence** dall'extra; il passo
+anomalo è seq1854/1855. **UNKNOWN** distanza temporale esatta storica:
+SLOPE-04 non registrava QPC. Non sostituirla con 44/15 come misura.
+
+Non c'è dunque un extra immediatamente precedente al picco. L'assenza di
+extra per molti producer non prova da sola che la storia fisica sia tornata
+identica. Il parametro storico resta 0.169377014 anche dopo integration,
+Y rimane current, e la direzione è quasi -X con piccolo +Z.
+Se il ramo fosse quello ordinario con `9FE8=1`, `9F2C=0`, il delta 2.625
+richiederebbe uno scalar circa **15.499**, equivalente ad app dt circa
+**258.3 ms** in modalità normale. Questa è **un'inferenza condizionale**,
+non un return storico misurato: quei scalar/branch non erano catturati.
+
+#### Serie controllata
+
+Steam, Anticamera, stessa lastra, pad (-0.5, 0.8660254), buttons=0, 4.0 s,
+camera non manovrata, target NVIDIA 30 prima del lancio. FPS effettivi non
+misurati esternamente. Reset mediante pad, nessuna scrittura posizione.
+La direzione nuova normalizzata è circa (-0.99999982, 0, -0.00058),
+mentre la cattura storica aveva piccolo **+Z**: non è un replay esatto della
+traiettoria storica, anche se le nuove condizioni sono comuni alla serie.
+La prima prova vanilla incontra inoltre un bordo prima della faccia principale.
+
+| Cattura `.cache/` | Ghost start XYZ | Max abs integration X, run | Max ghost Y | Extra reali / preflight |
+|---|---|---:|---:|---:|
+| interval-vanilla-02 | (-8.379351, 1.400000, 131.877548) | 0.687431 | 1.659388 | 0 / 0 |
+| interval-vanilla-03 | (-7.373043, 1.400000, 131.592056) | 0.695817 | 1.901794 | 0 / 0 |
+| interval-vanilla-04 | (-7.392611, 1.400000, 131.613373) | 0.692215 | **5.235761** | 0 / 0 |
+| interval-preserve-01 | (-7.655859, 1.400000, 131.637955) | 0.701435 | 1.597311 | 0 / 0 |
+| interval-dry-01 | (-7.414088, 1.400000, 131.599121) | 0.696627 | **5.793885** | 0 / 14 |
+| interval-extra-01 | (-7.404352, 1.400000, 131.621765) | 0.687836 | 1.594011 | 11 / 11 |
+| interval-extra-02 | (-7.955672, 1.400000, 131.638351) | 0.701206 | 1.597913 | 10 / 10 |
+
+`interval-vanilla-01` è esclusa dalla distribuzione: smoke test senza input,
+1620 eventi. Le sette prove effettive hanno 3733..4488 eventi, zero overflow,
+stderr vuoto, ripristino riuscito. Nessuna grande ascesa nelle due A+C nuove.
+Le quote oltre 2 delle prove senza extra **non** sono failure A+C: mostrano
+una salita anche nel percorso vanilla strumentato della nuova traiettoria.
+
+#### Primo contatto della faccia storica
+
+Definizione **solo per analisi offline**: primo callback originale da `72ADDB`
+con normale della faccia circa (0.96457, 0.26381, ~0), distinta dal bordo
+incontrato prima da vanilla-02. Non è un nuovo filtro di collisione.
+
+| Cattura | Producer / physical / callback seq | Integration X delta | Return dt | Requested Y | Ghost Y prima -> dopo |
+|---|---|---:|---:|---:|---|
+| vanilla-02 | 18 / 1540 / 1542 | -0.675829 | 3.990084 | +0.00010213 | 1.408042 -> 1.553586 |
+| vanilla-03 | 19 / 1516 / 1518 | -0.677530 | 4.000134 | -0.00003618 | 1.407886 -> 1.543397 |
+| vanilla-04 | 19 / 1552 / 1554 | -0.680275 | 4.016340 | -0.00003373 | 1.407605 -> 1.534800 |
+| preserve-01 | 18 / 1547 / 1549 | -0.675722 | 3.989454 | +0.00011549 | 1.407312 -> 1.573834 |
+| dry-01 | 19 / 1890 / 1893 | -0.679916 | 4.014222 | -0.00003003 | 1.407790 -> 1.529511 |
+| extra-01 | 16 / 1862 / 1865 | -0.676996 | 3.996984 | +0.00006070 | 1.407388 -> 1.507360 |
+| extra-02 | 15 / 1832 / 1835 | -0.677471 | 3.999786 | +0.00002730 | 1.407299 -> 1.579713 |
+
+Query start Y è current gameplay Y + 1.2; hit Y al primo contatto è
+0.007326..0.008162. X query per queste righe è rispettivamente
+-18.823053 / -18.870796 / -18.906540 / -18.468306 / -18.927361 /
+-18.719656 / -18.475502; Z 131.568573..131.631958. I record mantengono
+XYZ completi. Il confronto non parte da ghost/contact history identici.
+PreStep del primo passo ha `C0=0` prima/dopo in tutti questi contatti;
+`D0` può già contenere normali differenti. Non è un trace diretto di ingresso
+in `72AB3C`: nessuna nuova semantica assegnata ai byte.
+
+#### Timing e secondo wrapper
+
+**CONFIRMED runtime, run ordinario:** `9FE8=1`, `9F2C=0`, `4E0=0` nei
+58 producer run verificati per prova. Il prodotto
+`normalized_direction * parameter * consumed_dt * 9FE8` coincide con
+integration delta entro circa 0.000001 in X, zero errore Y, 0.000008 in Z.
+Il getter originale legge uno scalar; non accumula intervalli nella chiamata.
+
+| Condizione | Range return consumato | Range intervallo player QPC, ms |
+|---|---|---|
+| vanilla, tre prove | 3.887..4.109 | 64.446..68.684 |
+| preserve | 3.864..4.141 | 65.439..68.044 |
+| dry-run | 3.891..4.113 | 64.791..68.089 |
+| A+C, due prove | 3.871..4.140 | 65.359..68.829 |
+
+Il massimo return run consuma app dt circa 69.021 ms in preserve, senza extra;
+nessun delta dell'ordine 2.6 in questa piccola serie. Non è una prova statistica
+che vanilla non possa averlo. Non emergono nuova accelerazione, scale o
+accumulo Sprint nei producer osservati; non emerge un rallentamento della
+cadenza causato da A+C. **UNKNOWN** motivo del return/scalar storico.
+
+`--extra-dry-run` segue eligibility/calcolo/capsule sweep e logga il risultato,
+ma non chiama `72A5F0` dell'extra o il secondo `58D340`. Quattordici preflight,
+un hit object; nessun extra, rate 1 -> 1 (rate nativo 2 -> 2).
+La salita dry-run dimostra che il secondo substep non è necessario per quella
+nuova salita, non che il preflight causi l'evento storico. Vanilla-04 sale
+anche senza preflight. Strumentazione comune non esclusa mediante replay
+bit-identico completamente non strumentato: non dichiarare causa D.
+
+Nelle due A+C il secondo wrapper modifica current/target KCC e sincronizza
+il current gameplay; `E3` passa 1 -> 0. Requested/direction restano quelli
+dell'extra appena inviato fino alla submission successiva. Nella seconda
+prova, producer 7/8 modificano anche C0/normal D0: stato fisico può cambiare
+anche con preflight libero. Extra requested Y resta 0; un dY reale è
+-0.000018835 per correzione nativa, gli altri zero. Non è una correzione nostra.
+Nessun nuovo counter interpretato o compensato; nessun cambio della normal.
+
+Primo contatto A+C-01: ultimo extra producer15/seq1847, ghost X
+-18.242651 -> -18.412027, circa **66.235 ms** prima del setter16.
+A+C-02: ultimo extra producer13/seq1801, ghost X -17.277948 -> -17.447330,
+circa **132.695 ms** prima del setter15 (un producer intermedio senza extra).
+La cadenza successiva resta nel range osservato vanilla. Normal/contact
+history può divergere con la posizione: equivalenza causale non dimostrata.
+Animation rimane invariata nel design: solo extra reale abilita rate 1.25;
+poll A+C osserva 1 -> 1 / 1 -> 1.25 / 2 -> 2. Nessuna ricalibrazione.
+
+#### Decisione e separazione Git
+
+Il picco 1.704 è **compatibile numericamente** con variazioni vanilla nuove,
+ma l'intero producer storico non è classificabile A senza il suo scalar.
+Non ci sono dati sufficienti per B (timing causato da A+C), C (stato fisico
+causa dell'outlier) o D (strumentazione/preflight causa). **F/UNKNOWN** con
+unico blocker specificato sopra. A non è approvato e non è respinto causalmente.
+Nessun cutoff aggiunto: lo storico offre già 44 producer senza extra prima
+del picco e l'outlier non si ripete; un altro cutoff non ne identifica il dt.
+Sanity slope/stairs/oblique/parallel/start-stop rinviati. Nessun nuovo multiplier.
+
+Ritentato il commit SLOPE-04 originale **prima** delle modifiche SLOPE-05:
+firma fallita ancora con `1Password: failed to fill whole buffer`.
+**Index SLOPE-04 preservato**, SLOPE-05 resta nel working tree, separabile
+con `git diff` rispetto all'index. Nessun reset/restore/amend, commit unsigned
+o cambio signing config. Catture locali gitignored; niente binari commessi.
+
+**CONFIRMED cleanup:** original vptr `14080AE08 / 140879BD0 / 140822AE8`
+verificati prima di chiudere il gioco; processo terminato e pagine private
+eliminate. Pad neutral/reset/disconnect, limiter `fps:null`, entrambe le mod
+locali attive come prima; SKIFsvc32/64 riattivati. Nessuna patch EXE/CPK.
+
+Self-check `terrain_trace`/`walk_trace`, py_compile dei due tool, parse dei
+due TOML research, `git diff --check` e `git diff --cached --check` passati.
+SHA-256 EXE invariata rispetto a SLOPE-04. Nessun driver installato, nessun
+file proprietario commesso, nessuno Sprint production o Audio avviato.
+
+### COLLISION-SLOPE-06 — 2026-10-11
+
+**Decisione: NOT READY — F/UNKNOWN.** Terminata la serie bounded autorizzata:
+10 run validi per condizione V/D/A, nessun integration/timing trigger.
+L'outlier storico X≈2.625 resta senza attribuzione causale. Non viene rimossa
+autonomamente questa condizione di blocco; A+C resta diagnostico.
+
+#### Getter temporale: evidenza statica
+
+**CONFIRMED, build verificata:** l'intero getter `69B4C0..69B4E2` ha due
+return e nessun'altra sorgente. `69B4C0` confronta il byte `C82FAC` con **1**;
+non verifica genericamente un valore nonzero. Il registro di ritorno è XMM0.
+
+| Condizione | Istruzioni | Sorgente | Classificazione |
+| --- | --- | --- | --- |
+| C82FAC == 1 | 69B4C9 load; 69B4D1 multiply; 69B4D9 ret | A63248 × float32(60.0), costante 803C3C | FIXED/ALTERNATE |
+| C82FAC != 1 | 69B4DA load; 69B4E2 ret | A63240 | NORMAL_DT |
+
+Il getter non legge direttamente A63238, A6323C o A63244. Il significato
+completo del flag e i suoi writer restano fuori scope. Il ramo alternativo è
+verificato staticamente, non esercitato live in questa serie.
+
+#### Capture e limiti della correlazione
+
+`tools/outlier_trace.py` riusa il candidato A+C e i trace esistenti. Nessuna
+modifica a extra=0.25 XZ/Y=0, preflight, dt=0 del secondo wrapper, eligibility,
+primo step vanilla o animation coupling. V non esegue preflight né extra;
+D esegue eligibility/preflight/log senza secondo step; A esegue A+C corrente.
+
+La copia privata osservativa del producer rimappa il callsite `1F6ADF` a una
+copia strumentata del getter: stessa comparazione, singola lettura della
+sorgente selezionata, stessa moltiplicazione e XMM0 realmente consumato.
+Il getter globale e le sorgenti temporali non sono patchati o scritti.
+Il record nello stesso producer contiene QPC/thread, cinque globali A63238
+..A63248, C82FAC, branch, sorgente selezionata, return, 9FE8/9F2C/4E0,
+parameter, target/current, direction normalizzata e integration before/after.
+
+Il contatore producer avanza all'ingresso integration (stage 2), anche idle;
+non dipende dalle sole chiamate al setter. Getter e integration sono correlati
+sullo stesso thread. Query, ghost, KCC requested, C0/D0, wrapper e ultimi extra
+sono conservati nel ring; le copie physical cross-worker non diventano frame
+atomici solo perché associate al producer più recente.
+
+History bounded: 64 producer precedenti, trigger, 16 successivi; copia host
+congelata dopo la finestra. Trigger **solo diagnostico**: abs(delta X)>1.0
+oppure consumed return>6.0. Ultimi otto extra con producer/physical sequence,
+QPC, ghost before/after, displacement, preflight e secondo-wrapper marker.
+Self-check verifica entrambe le soglie, finestra di 81 producer, freeze e wrap
+del ring. Nessun trigger live: il congelamento è verificato sinteticamente.
+
+#### Procedura ripetibile e risultati
+
+Anticamera, geometria della lane storica; input virtuale x=-0.5,
+y=0.8660254, buttons=0 per 4.0 s, assi (-16384, 28377). Camera non manovrata.
+Direction world normalizzata iniziale circa (-0.999981, 0, +0.006155).
+Ogni capture dura 18 s, con circa 6 s iniziali per la prehistory. Reset tramite
+pad e coordinate ghost read-only, senza scritture di posizione. NVIDIA target
+30 impostato prima del riavvio; manca una misura FPS esterna per questa serie.
+Ordine **V A V D A D**, ripetuto cinque volte. A conserva factor 1.25 e rate
+1.25 solo quando extra è realmente accettato, altrimenti vanilla.
+
+| Condizione | Run | Producer con getter consumato | Max return | Max abs(delta X) | Max ghost Y | Extra / preflight |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| V | 10 | 620 | 4.193082 | 0.710197 | 1.600238 | 0 / 0 |
+| D | 10 | 620 | 4.251618 | 0.720112 | 1.602817 | 0 / 110 |
+| A | 10 | 622 | 4.162686 | 0.701635 | 1.596872 | 95 / 95 |
+
+**CONFIRMED:** 8100 ingressi native integration, 1862 producer con getter
+consumato, 97918 eventi registrati. Tutti i return consumati sono NORMAL_DT,
+C82FAC=0, 9FE8=1, 9F2C=0, 4E0=0. Tutte le 1862 osservazioni rispettano
+`normalized_direction × parameter × consumed_return × 9FE8`, con massimo
+errore di ricostruzione float XYZ 7.63e-6 u. Return uguale alla sorgente
+A63240 selezionata e registrata nello stesso evento.
+
+| Sorgente | Min | Max |
+| --- | ---: | ---: |
+| A63238 (s) | 0.062596798 | 0.070860296 |
+| A6323C | 14.112275 | 15.975258 |
+| A63240 | 3.755808 | 4.251618 |
+| A63244 | 60 | 60 |
+| A63248 | 1 | 1 |
+
+Intervalli QPC fra producer con getter consumato: **52.0071..81.2727 ms**.
+Su tutti gli ingressi integration, idle compreso: 5.5387..203.2224 ms.
+Quattro gap naturali oltre 100 ms (D02 producer40/174, V08 producer152/154)
+hanno parameter=0, delta XYZ=0 e nessuna call al getter. Non costituiscono
+evidenza di return alto nel percorso moving. Nessuno stall indotto.
+
+| Condizione | Start X min..max | Start Y | Start Z min..max |
+| --- | --- | --- | --- |
+| V | -7.747937..-7.561017 | 1.400000 | 131.369110..131.396942 |
+| D | -7.738849..-7.547272 | 1.400000 | 131.386841..131.404114 |
+| A | -7.699688..-7.412622 | 1.400000 | 131.389297..131.404449 |
+
+Gli start effettivi e i riepiloghi individuali sono nei capture locali
+gitignored `.cache/outlier30-{V,D,A}-{01..10}.jsonl`; stderr vuoti e restore
+riportato in tutti i 30 run. Reset bounded, non bit-identici: questa piccola
+serie non dimostra equivalenza statistica assoluta del contatto.
+
+Esclusi: smoke iniziale con contatore setter che non distingueva integration
+idle (corretto prima della serie); smoke a cap60, seguito da restart a cap30;
+navigazione e tentativi di reset a basso stick. Nessuno conta nei 30 run.
+Il serializer finale conserva anche scalar idle e correlazione preflight degli
+ultimi extra; self-check passato, senza ulteriore run oltre il limite bounded.
+
+#### Classificazione e stop
+
+Nessun evento permette di assegnare T1/T2/U1/U2/C o V all'outlier storico.
+Ymax non è stato usato come gate. Le ascese vanilla/dry-run di SLOPE-05
+restano evidenza valida anche se questa serie non le riproduce.
+**Unico blocker:** integration X≈2.625 con return consumato e branch/source
+nello stesso producer. La serie termina al limite autorizzato; non si inferisce
+che l'evento non esista né che A+C sia approvato. Sanity subordinati non avviati.
+Nessun nuovo filtro/latch, compensazione temporale, Sprint production o Audio.
+
+**CONFIRMED cleanup:** vptr originali player/KCC/channel verificati prima
+dell'uscita (14080AE08 / 140879BD0 / 140822AE8), gioco chiuso, pagine private
+terminate. Pad neutral/reset/disconnect; limiter ripristinato `fps:null`.
+Mod d3d11.dll e SAO HR Ultrawide.asi ripristinate; SKIFsvc32/64 riattivati.
+Nessuna scrittura EXE/CPK o installazione driver.
+
+Self-check outlier/terrain/walk, py_compile dei tre tool, parse TOML research,
+`git diff --check` e `git diff --cached --check` passati. SHA-256 EXE finale
+`1923f0d8d2cad559d6ad6e001af54ea5ea5aa70171323f42d4e1fa3d63699e43`, invariata.
+
+Commit firmato del solo index SLOPE-04 ritentato dopo l'approvazione utente;
+fallito ancora con `1Password: failed to fill whole buffer`. Nessun commit
+creato, index originale preservato, nessun reset/restore/amend o cambio firma.
+SLOPE-05 resta nel working tree; SLOPE-06 è distinguibile nel nuovo tool
+outlier_trace, nelle estensioni opzionali event_shim/observer e in questa sezione.
+I default dei caller esistenti conservano il comportamento precedente.
+
+## COLLISION-SLOPE-07 — Diagnostic sanity suite
+
+2026-10-17–19. **Decisione al checkpoint: NOT READY — lifecycle positivo
+post-reload incompleto.** Computer Use è stato fermato dall'utente con Esc
+prima della ricarica conclusiva. Non è una failure dimostrata di A+C.
+S1–S8 hanno il minimo diagnostico di un controllo vanilla e due run A+C;
+non si riaprono le prove geometriche per completare il lifecycle.
+
+### Metodo e integrità del candidato
+
+**CONFIRMED runtime:** pad virtuale attraverso Steam; nessuna scrittura di
+posizione per i reset. Start bounded, non identici. Camera ferma durante ogni
+confronto; stick destro usato soltanto nella ricognizione precedente a S2.
+`tools/sanity_trace.py` aggiunge riepiloghi Python bounded ai record SLOPE-06,
+senza cambiare gli shim nativi, A+C, eligibility o catcher. Le finestre QPC da
+250 ms e i poll E3/E4 non rappresentano frame atomici. I record nativi, non i
+poll, sono la fonte dei conteggi dei passi e dei delta ghost.
+
+Restano invariati primo movimento gameplay vanilla, extra XZ 0.25, extra
+requested Y=0, capsule preflight, secondo wrapper dt=0 e rate 1.25 soltanto
+quando l'extra è accettato. Nessun filtro/latch, clamp Y o compensazione dt.
+SHA-256 dei sorgenti nativi/catcher invariati rispetto all'inizio di SLOPE-07:
+
+- terrain_trace.py: `82e399598bcf51a4137db60f157c4f3b68008eea720bbd6f54c58add85c2e31b`;
+- walk_trace.py: `1d2280a947ed62c6545bd61dd2490bc4015e4b2ac093e2a268ae913e8906d130`;
+- outlier_trace.py: `42456313ba01679a7acf4198fe1e2e777c4fa51caee147266404587f70197a44`.
+
+Nessun nuovo override FPS applicato. Il tentativo NVAPI iniziale falliva con
+status -166 prima della mutazione; V/A usano lo stesso profilo illimitato,
+senza verifica esterna del framerate. Questi dati non sono un nuovo test FPS.
+Il processo del 18 ottobre non era più presente alla ripresa del 19: la
+sessione successiva, con livello player diverso, usa nuovi controlli V per S6.
+Non si attribuisce la chiusura fra le sessioni al candidato.
+
+### Setup, geometrie ed esito
+
+Input `(x,y)`, buttons=0, durata del singolo impulso:
+
+| Sanity | Geometria | Input / durata | Esito diagnostico |
+|---|---|---|---|
+| S1 | Poggio Phoeniath, pendenza ordinaria | (-0.5,0.8660254), 4 s | PASS, avanzamento e fallback verticale |
+| S2 | Foresta Grilim, tre gradini di pietra davanti all'edificio circolare | (-0.70710678,0.70710678), 1.5 s | PASS limitato, pochi extra eleggibili |
+| S3 | Fianco ripido dell'ingresso dello stesso edificio | (-0.96365,-0.26717), 1 s | PASS, arresto e hit preflight |
+| S4 | Contatto obliquo sul fianco curvo dell'ingresso | (-0.871,0.4913), 0.7 s | PASS, sliding; piccola correzione nativa transitoria |
+| S5 | Breve tratto quasi parallelo al fianco, distanza iniziale ~1.4 u | (-0.26717,0.96365), 0.7 s | PASS, extra generalmente accettati |
+| S6 | Distacco dallo stesso muro, nuova sessione e camera iniziale | (-1,0), 0.35 s | PASS, nessuno sticky state osservato |
+| S7 | Pianerottolo di Grilim, stop/start | (0,-1),(0,1), ripetuti due volte, 0.6 s ciascuno | PASS, pause di alcuni secondi fra impulsi |
+| S8 | Stesso pianerottolo, inversioni consecutive corte | (0,-1),(0,1),(-0.25,-0.9682458),(0.25,0.9682458), 0.3 s ciascuno | PASS, extra coerenti con la richiesta corrente |
+
+S1 world direction circa (-0.4995,0,-0.8663). S2 circa (-0.872,0,+0.489).
+S3 circa +Z, S4 circa (-X,+Z), S5 circa -X. S6 circa -Z. Per S7/S8 la
+camera iniziale della nuova sessione produce -X con y=-1 e +Z con x=1.
+La neutralizzazione fra comandi consecutivi S8 dura meno di un millisecondo
+nel log del pad; non sono le pause di diversi secondi usate in S7.
+
+File locali ignorati `.cache/s7-<run>.jsonl`, con relativo `.err`.
+Nella tabella A/H sono conteggi di **tentativi / accettati / hit preflight**;
+DX è il massimo abs integration delta X; path è la somma XZ dei passi nativi,
+escludendo il doppio conteggio del wrapper esterno. Return e DX sono massimi
+nello stesso capture, non necessariamente nello stesso producer. Coordinate
+e quote arrotondate a quattro decimali; i file conservano i float originali.
+
+| Run | Ghost start XYZ | Min Y, max Y | Max return | Max DX | A/H | Path XZ |
+|---|---|---|---:|---:|---:|---:|
+| slope-scout (S1 V) | (254.4730,1.4000,-62.3247) | 1.3563,2.9610 | 0.578118 | 0.048904 | 0/0/0 | 39.5566 |
+| S1-A03 | (254.3513,1.4000,-62.3069) | 1.3622,2.9634 | 0.639714 | 0.054123 | 296/296/0 | 43.6322 |
+| S1-A04 | (254.3053,1.4000,-62.1332) | 1.3689,2.9701 | 0.542310 | 0.045883 | 292/292/0 | 43.5730 |
+| S2-Grilim-V01 | (-643.1719,26.0906,-390.0454) | 26.0906,30.7047 | 0.468780 | 0.069214 | 0/0/0 | 14.1101 |
+| S2-Grilim-A01 | (-643.1484,26.0822,-390.0587) | 26.0822,30.7047 | 0.503694 | 0.074402 | 12/12/0 | 14.2308 |
+| S2-Grilim-A02 | (-643.1863,26.0958,-390.0372) | 26.0958,30.7047 | 0.753912 | 0.111328 | 11/11/0 | 14.2586 |
+| S3-Grilim-V02 | (-655.6834,30.7047,-384.2018) | 30.7046,30.7047 | 0.469938 | 0.000427 | 0/0/0 | 1.4416 |
+| S3-Grilim-A02 | (-655.7028,30.7047,-384.1914) | 30.7045,30.7047 | 1.280448 | 0.001343 | 17/16/1 | 1.4323 |
+| S3-Grilim-A03 | (-655.7237,30.7047,-384.1810) | 30.7046,30.7047 | 0.397068 | 0.000427 | 19/18/1 | 1.4316 |
+| S4-Grilim-V01 | (-655.7379,30.7047,-382.7907) | 30.7047,30.7047 | 0.432660 | 0.045105 | 0/0/0 | 5.2375 |
+| S4-Grilim-A01 | (-655.8032,30.7047,-382.9567) | 30.7047,30.7048 | 0.366018 | 0.033447 | 82/81/1 | 6.2231 |
+| S4-Grilim-A02 | (-656.1171,30.7047,-382.8100) | 30.7047,30.7070 | 0.400404 | 0.047974 | 81/81/0 | 6.3525 |
+| S5-Grilim-V01 | (-655.5954,30.7047,-384.2409) | 30.7047,30.7047 | 0.357774 | 0.060608 | 0/0/0 | 5.9896 |
+| S5-Grilim-A01 | (-655.6562,30.7047,-384.2078) | 30.7047,30.7047 | 0.367596 | 0.062195 | 132/132/0 | 7.4083 |
+| S5-Grilim-A02 | (-655.6049,30.7047,-384.1674) | 30.7047,30.7047 | 0.415242 | 0.070312 | 130/130/0 | 7.3281 |
+| S6-new-V01 | (-656.4811,30.7046,-382.7946) | 30.7046,30.7047 | 0.971724 | 0.000000 | 0/0/0 | 2.3924 |
+| S6-new-A01 | (-656.4695,30.7046,-382.8205) | 30.7046,30.7047 | 0.645342 | 0.000000 | 25/24/1 | 2.4164 |
+| S6-new-A02 | (-656.4557,30.7046,-382.8012) | 30.7046,30.7047 | 0.543624 | 0.000000 | 25/25/0 | 2.3934 |
+| S7-V01 | (-656.4532,30.7046,-385.1921) | 30.7046,30.7047 | 1.605942 | 0.272034 | 0/0/0 | 20.1926 |
+| S7-A01 | (-656.3318,30.7047,-385.1921) | 30.7047,30.7047 | 0.834144 | 0.141296 | 259/259/0 | 24.7756 |
+| S7-A02 | (-656.2341,30.7047,-385.1921) | 30.7047,30.7047 | 0.711588 | 0.120544 | 269/269/0 | 24.6694 |
+| S8-short-V01 | (-659.8947,30.7047,-384.7182) | 30.7047,30.7047 | 0.517686 | 0.085815 | 0/0/0 | 11.2036 |
+| S8-short-A01 | (-659.8699,30.7047,-384.8248) | 30.7047,30.7047 | 0.707940 | 0.092773 | 159/159/0 | 13.9106 |
+| S8-short-A02 | (-659.8677,30.7047,-384.9460) | 30.7047,30.7047 | 0.684918 | 0.090149 | 165/165/0 | 13.8056 |
+
+### Interpretazione e limiti osservati
+
+**CONFIRMED runtime:** S1 avanza circa il 10% in più nello stesso impulso,
+senza rifiuto preflight sistematico. L'eligibility originale esclude parte dei
+passi con Y diversa da zero: non è un boost del 25% su tutta la pendenza.
+I massimi dY del primo passo A (~0.08) compaiono anche nel controllo vanilla
+di ritorno `s7-reset02`, sulla stessa estensione di terreno. Le normali
+surface raggiungono up dot ~0.841. Nessun accumulo verticale evidente.
+
+S2 attraversa i gradini e raggiunge lo stesso pianerottolo senza blocco,
+doppio step anomalo o differenza finale persistente. Solo 12/11 extra sono
+accettati: la maggior parte della salita resta vanilla per l'eligibility
+esistente. Questo valida il fallback funzionale, non un aumento del 25%
+lungo tutta la scala né un secondo step attivo su ogni gradino. Extra actual
+dY=0 nei due run. I tre gradini sono stati identificati visivamente; le
+precedenti ricognizioni denominate steps/lowsteps non valgono come S2.
+
+S3 si ferma a Z circa -382.79. Ogni approccio A ha un hit preflight che
+rifiuta l'extra; nessuna salita/penetrazione osservata. Normale preflight
+circa (0.00513,-0.00104,-0.999986). I run già a contatto V01/A01 sono
+supporto, non sostituiscono gli approcci V02/A02/A03 della tabella.
+
+S4 conserva lo sliding. In A02 un extra con requested Y=0 produce actual
+dY=+0.002244949; il primo passo nativo successivo lo annulla con
+-0.002244949. È una piccola correzione di contatto, non un'ascesa persistente.
+Non si dichiara che ogni extra abbia actual Y=0. S5 aumenta il path del
+22–24% senza hit: la sola vicinanza al muro non sopprime il candidato.
+La parete è curva e il tratto parallelo è corto: non è un test lungo su una
+parete infinita rettilinea.
+
+S6 ritorna agli extra senza reset dopo il distacco. Il primo run ha un hit
+vicino al contatto, seguito da 24 accettazioni; il secondo ne ha 25 senza
+hit. Le condizioni originali di run/vertical eligibility restano applicate;
+non si promette accettazione durante la fase walk iniziale o Y nonzero.
+
+S7 ha quattro episodi di movimento per run. Le finestre fra gli episodi e
+quelle finali hanno zero extra e zero path. Nei witness finali requested è
+(0,0,0); nessun secondo wrapper extra residuo. I poll E3/E4 osservano (0,0)
+e (1,0) anche vanilla, con coda ferma: non si assegna una nuova semantica ai
+byte. Getter downstream osservato 1→1, 1→1.25, 2→2 nei run A; nessuna nuova
+calibrazione playback. Dopo S8 player current e integrated hanno gli stessi
+XZ del ghost e il consueto offset Y di 1.4; requested zero, E3/E4=(0,0),
+rate originale 1.0. Il minimo dot normalizzato fra extra XZ e requested del
+primo passo correlato è ~1 nei nuovi run A S6–S8. Nessun riuso di un extra
+opposto alla richiesta corrente osservato; questa metrica non è un test di
+sincronizzazione atomica di tutti i field gameplay.
+
+Esclusioni ulteriori: S1 A01 terminato prima dell'impulso, A02 perso focus,
+prima baseline piana; ricognizioni con camera/attacchi da mouse; S6 V del
+18 ottobre non usato al posto del nuovo controllo; prime inversioni lunghe
+S8 non comparabili per spazio/contatto e `S8-A01` sceso sui gradini dal bordo
+del pianerottolo. S8 formale usa esclusivamente la serie short. Nessuno di
+questi esclusi viene conteggiato come failure o run A valido.
+
+### Catcher e lifecycle al checkpoint
+
+**Outlier catcher: triggered no.** Nei 24 run formali: 6,533 producer con
+return consumato, 49,205 gruppi inclusi idle, 567,405 eventi, 1,974 tentativi
+extra, 1,970 accettati e quattro hit. Max return=1.605942, max abs DX=0.272034;
+tutti i return classificati NORMAL_DT. Anche i file locali di ricognizione
+SLOPE-07 non contengono trigger live. Le soglie 1.0/6.0 restano diagnostiche.
+Tutti i 24 capture formali riportano restored e hanno stderr vuoto.
+
+**CONFIRMED runtime, lifecycle parziale:** dopo A+C/stop a Grilim i vptr sono
+originali prima del viaggio. Fast travel a Poggio Phoeniath, poi nuova scan
+player e resolve, senza mantenere hook durante la transizione:
+
+| Oggetto | Prima | Dopo |
+|---|---|---|
+| CChrPc, unico risultato della scan | 0x218AE890 | 0x218AE890 |
+| Physics ID | 4714 | 27872 |
+| Wrapper | 0x2041F120 | 0x2034F0B0 |
+| KCC | 0x825772C0 | 0x828FE670 |
+| Animation channel | 0x268B3990 | 0x26881170 |
+
+Indirizzi solo di sessione (PID72088). I nuovi controller, physics ID e
+channel sono acquisiti nuovamente; i vecchi indirizzi non sono passati al
+nuovo setup. Vptr originali player/KCC/channel 14080AE08/140879BD0/140822AE8.
+Questo verifica teardown e riacquisizione, non un hook persistente durante
+fast travel e nemmeno respawn/combat/town.
+
+`s7-lifecycle-walk04` osserva movimento a stick virtuale 0.75, path 2.640942,
+rate 2→2, zero extra. `s7-lifecycle-run-V02` e `flat-approach` osservano
+movimento vanilla dopo il reload. Le prime sonde senza movimento e i capture
+con perdita di focus sono esclusi. Successivamente è osservato selector
+1/FE; `s7-lifecycle-A-approved` conserva il rate originale 1.558268 e ha zero
+extra. Non è una prova efficace A+C. Nessuna causalità attribuita al viaggio,
+alle armi o al secondo step sulla sola base del selector.
+
+**Unico passo mancante:** un run con extra realmente accettato e ritorno a
+idle sulle istanze riacquisite, nel contesto FF/FE verificato. La ricarica
+prevista per recuperare tale contesto è interrotta dallo stop di Computer
+Use dell'utente. Il gate pragmatico completo non è ancora soddisfatto:
+**NOT READY**, senza promuovere le prove escluse o inventare una failure.
+L'outlier storico resta **historical unreproduced UNKNOWN**; non è risolto
+e non viene riclassificato. Nessuna implementazione Sprint o Audio iniziata.
+
+### Cleanup del checkpoint
+
+Vptr originali nuovamente verificati sulle istanze post-travel prima della
+chiusura. Dopo lo stop utente non è stato emesso altro input Computer Use.
+Pad interrotto con reset nel finally e disconnessione; processo gioco chiuso
+per cleanup, pagine diagnostiche terminate con esso. Mod locali ripristinate
+e riavvio Special K richiesto. Nessuna scrittura EXE/CPK, nessun driver nuovo.
+Le verifiche finali e lo stato effettivo dei servizi sono riportati sotto.
+
+**CONFIRMED cleanup finale:** nessun processo gioco, sanity_trace o virtual_pad
+residuo. SKIFsvc32 e SKIFsvc64 nuovamente presenti; mod d3d11.dll e SAO HR
+Ultrawide.asi attive, nessun file mod ancora disabilitato. Self-check
+outlier/terrain/walk/sanity/virtual_pad, py_compile dei cinque tool, parse dei
+due TOML research, `git diff --check` e `git diff --cached --check` passati.
+SHA-256 index binary diff invariato:
+`ec8c6d3c459f504050d81cb7796d636176f6cc6d112ed454a31f05a2c092af3a`.
+SHA-256 EXE invariato:
+`1923f0d8d2cad559d6ad6e001af54ea5ea5aa70171323f42d4e1fa3d63699e43`.
+Limite di verifica limiter: la rilettura con stdin EOF fallisce ancora in
+FindApplicationByName, NVAPI -166, prima di qualsiasi mutazione. Nessun
+override creato in SLOPE-07, ma non si dichiara una nuova lettura verificata
+`fps:null` dal driver.
+
+Nessun commit o richiesta di firma in questa sessione. Index SLOPE-04
+preservato, SLOPE-05/06 mantenuti separabili; SLOPE-07 è il collector sanity,
+l'estensione opzionale del pad per la sola ricognizione e questa appendice.
+
+## COLLISION-SLOPE-07B — Lifecycle Closeout (2026-10-20)
+
+**Decisione: READY FOR SPRINT IMPLEMENTATION.**
+**COLLISION-SLOPE: CLOSED pragmatically.**
+**Historical integration outlier: UNKNOWN, not reproduced.**
+
+Readiness per costruire la prima implementazione Sprint, non dimostrazione di
+sicurezza production. S1–S8 e i limiti di SLOPE-06/07 restano quelli documentati;
+non sono stati ripetuti. Nessun cambiamento al candidato A+C, ai guard, al
+preflight, al secondo wrapper dt=0, al catcher o al coupling animation.
+
+### Recupero normale del contesto e identità
+
+**CONFIRMED runtime:** normale Continue da Steam, poi teletrasporto in-game
+da Passo Trie Modragal a Poggio Phoeniath. Nessuna scrittura di selector,
+flag run, parametro, clip, posizione o physics ID. Nessun hook durante il
+viaggio. Le istanze sono state risolte di nuovo tramite scansione CChrPc e
+lookup physics dopo il caricamento dell'area, prima di installare i trace.
+
+Identità della stessa sessione PID 52380; indirizzi heap solo per questa sessione:
+
+| Oggetto | Prima del viaggio | Dopo il viaggio / due prove A+C |
+|---|---|---|
+| Player | `21928890` | `21928890` |
+| Physics ID | 10 | 51 |
+| Wrapper | `204C84B0` | `20559180` |
+| KCC | `335D5D80` | `34CA8F70` |
+| Animation channel | `26972320` | `2699F140` |
+
+Owner corrente `268F7DE0`, animation controller `269549C0`. Selector FF/FE
+prima e dopo il viaggio e dopo le prove. Player invariato non significa
+controller riutilizzato: wrapper, KCC, physics ID e channel sono cambiati e
+sono stati riacquisiti. Vptr originali prima/dopo instrumentation:
+player `14080AE08`, KCC `140879BD0`, channel `140822AE8`.
+
+Il pad inizialmente non era consumato. CONTROL Resonant è stato chiuso con
+Alt+F4 dopo autorizzazione esplicita; SAOHR è stato riavviato da Steam con il
+pad virtuale già collegato. A e Start hanno poi funzionato. Questa sequenza
+risolve l'ostacolo operativo, senza dimostrare causalità dell'altra applicazione.
+
+### Due conferme A+C post-travel
+
+Acquisizioni bounded `scratch/slope07b-A01.jsonl` e `slope07b-A02.jsonl`
+(ignorate da Git). Breve avvicinamento vanilla sul percorso libero; camera
+non manovrata. Pad buttons=0, X=0; Y=+1 per 1.2 s in A01, Y=-1 per 1.0 s
+in A02. Rilascio automatico a neutral dopo ogni impulso.
+
+| Evidenza | A01 | A02 |
+|---|---:|---:|
+| Durata cattura | 25 s | 30 s |
+| Producer con return consumato | 249 | 195 |
+| Eventi nativi | 60,346 | 69,529 |
+| Preflight / extra realmente applicati | 216 / 216 | 165 / 165 |
+| Preflight hit | 0 | 0 |
+| Extra actual ΔY min/max | 0 / 0 | 0 / 0 |
+| Allineamento XZ minimo | 1.0 | 1.0 |
+| Ghost Y min/max | 1.397217 / 1.400000 | 1.400000 / 1.400000 |
+| Max return consumato | 0.425214 | 0.648882 |
+| Max abs integration X | 0 | 0 |
+| Intervallo producer QPC | 3.959–14.021 ms | 3.926–18.997 ms |
+| Getter originale 1.0 → 1.25, osservazioni | 90 | 73 |
+| Walk getter 2.0 → 2.0, osservazioni | 14 | 14 |
+| Coda senza extra dopo l'ultimo accettato | 15.438 s | 20.697 s |
+| Catcher trigger / frozen | nessuno / false | nessuno / false |
+
+Start/end ghost A01: `(254.473022, 1.397217, -52.236282)` →
+`(254.473022, 1.400000, -65.914040)`. A02 parte da quest'ultimo punto e
+termina `(254.473022, 1.400000, -54.654266)`. Il massimo integration X=0
+riflette questa direzione ±Z; non è una nuova prova dell'outlier storico X.
+Tutti i return catturati hanno source NORMAL_DT.
+
+**CONFIRMED witness diretto:** A01 producer 1746, physical thread 7472,
+seq21084 vanilla requested `(0, +0.000014424324, -0.052864074707)`;
+seq21087 extra requested `(0, 0, -0.013216018677)`. Ghost extra:
+`(254.473022, 1.398953, -52.715630)` →
+`(254.473022, 1.398953, -52.728844)`.
+A02 producer 1761, physical thread 7472, seq19491 vanilla requested
+`(0, 0, +0.057754520327)`; seq19494 extra requested
+`(0, 0, +0.014438630082)`. Ghost extra:
+`(254.473022, 1.400000, -65.436165)` →
+`(254.473022, 1.400000, -65.421722)`.
+In entrambi i witness l'extra requested XZ è esattamente 0.25× il contributo
+vanilla registrato; requested Y=0 e spostamento effettivo osservato.
+Il parametro producer resta vanilla `0.16937701404094696`.
+
+**CONFIRMED eligibility al getter:** il return 1.25 attraversa il guard
+invariato che verifica physics ID corrente 51, owner/controller/channel
+correnti, actual channel instance, FF/FE, F8A6=1, F8AD=0, parametro vanilla,
+original return=1.0, descriptor clip122 con indice ricontrollato e gate
+dell'extra accettato. È evidenza del ramo nativo verificato, non un poll
+atomico simultaneo a ogni physical step. I return invariati 1→1 e walk 2→2
+sono registrati; nessuna nuova special action provocata. L'esclusione delle
+altre clip resta quella già verificata e invariata, senza ripetere S1–S8.
+
+Al termine: FF/FE, F8A6=0, F8AD=0, clip0, channel rate1.0; nessun extra
+nelle code idle. Nessun catcher, crash o movimento anomalo osservato.
+Un poll ausiliario ha rifiutato il vptr CChrPc temporaneo perché `resolve()`
+accetta solo quello originale: errore del validatore del poll, non identità
+stale del gioco. Nessun dato di quel poll viene usato come evidenza run.
+Il resolver originale passa di nuovo dopo il restore e conferma physics51,
+wrapper/KCC/channel invariati rispetto all'acquisizione post-travel.
+
+### Modifiche diagnostiche, cleanup e limiti
+
+Unica modifica al collector: conserva un witness bounded del primo producer
+con `extra_physical`, con self-check della conservazione. Nessuna modifica
+all'instrumentation nativa o alla logica A+C. Report append-only; AGENTS e
+le modifiche precedenti non sono stati riscritti. Nessun commit.
+
+**CONFIRMED cleanup:** entrambi i trace terminano `restored`, stderr vuoto;
+vptr originali riletti prima della chiusura normale del gioco. Processo
+SAOHR chiuso e pagine private terminate. Pad neutralizzato da ogni impulso,
+poi reset nel finally e disconnessione. Mod d3d11.dll e SAO HR Ultrawide.asi
+ripristinate attive; nessuna mod ancora disabilitata. SKIFsvc32 e SKIFsvc64
+nuovamente presenti. Nessuna patch permanente EXE/CPK o nuovo driver.
+
+Nessun override FPS creato. La rilettura EOF del limiter fallisce ancora
+in FindApplicationByName, NVAPI -166, prima di qualsiasi mutazione:
+non si dichiara una nuova verifica driver `fps:null`.
+Self-check dei cinque tool, py_compile, parse dei due TOML research e
+controlli Git diff/index passano. Index binary diff SHA-256 invariato:
+`ec8c6d3c459f504050d81cb7796d636176f6cc6d112ed454a31f05a2c092af3a`.
+EXE SHA-256 invariato:
+`1923f0d8d2cad559d6ad6e001af54ea5ea5aa70171323f42d4e1fa3d63699e43`.
+Hash terrain_trace/walk_trace/outlier_trace/virtual_pad invariati rispetto
+all'inizio di SLOPE-07B; staging SLOPE-04 preservato integralmente.
+
+Il gate lifecycle residuo è chiuso entro questi limiti. Town/combat,
+lifecycle production completo e sicurezza production restano fuori da
+questa decisione. Nessuna implementazione Sprint production o Audio iniziata.
+
+## SPRINT-01 — native development preview — 2026-10-23
+
+La decisione research SLOPE-07B resta READY FOR SPRINT IMPLEMENTATION, non
+certificazione della nuova DLL. Implementazione isolata nel worktree
+`C:/Users/Maicol/SAOHRFix-sprint-01`, branch `sprint-01`, senza alterare l'index
+research. Specifica, build e test effettivi: `docs/sprint-01.md` in quel worktree.
+
+**SPRINT-01 BLOCKED.** CONFIRMED: build Windows x64 Debug/Release, test nativi
+config/input/extra, caricamento tramite loader ASI esistente, installazione dei
+due detour e riacquisizione delle associazioni dopo fast travel. Il percorso
+implementato conserva il primo movimento vanilla e tenta A+C con preflight,
+extra XZ e secondo wrapper dt=0; non modifica il parametro upstream.
+
+Nessun extra della nuova DLL risulta accettato nel log: contatori movimento e
+animation entrambi zero. Left Shift ha prodotto una breve transizione richiesta;
+Hold fisico, Toggle in-game, velocità e animation coupling non sono verificati.
+Il pad muove il gioco tramite Steam Input, ma L3 non raggiunge il polling XInput
+della DLL: con Special K un pad con L3 neutro, senza Special K nessun pad XInput.
+Non è dimostrata causalità esclusiva di Special K. Il menu consente movimento;
+FF/FE non dimostra la chiusura del menu e manca un predicate verificato.
+I guard non sono stati allargati e non sono stati aggiunti latch compensativi.
+
+Test live interrotti su questi gap concreti. La preview non va abilitata per
+gioco normale. **Historical integration outlier: UNKNOWN, not reproduced** resta
+invariato. Nessuna nuova prova SLOPE-06/07 né nuova analisi collisione.
+
+Cleanup: gioco chiuso normalmente, pad neutralizzato e disconnesso, servizi
+globali Special K ripristinati. ASI/INI/log creati per la prova rimossi dalla
+directory gioco e preservati nella cache ignorata del worktree. Nessun vptr
+scambiato; codice residente terminato col processo. Nessuna modifica a loader,
+Ultrawide, EXE/CPK o driver. Nessun override FPS creato; nessuna nuova verifica
+`fps:null` dichiarata. Audio e altre feature non iniziate.
+
+Controlli finali SPRINT-01: Debug/Release e test nativi passano; sei self-check
+research, py_compile, parse TOML e diff --check/index passano. EXE e loader
+mantengono gli hash già registrati. Index research binary diff invariato
+`ec8c6d3c459f504050d81cb7796d636176f6cc6d112ed454a31f05a2c092af3a`.
+Il primo commit nel worktree isolato fallisce con `1Password: failed to fill
+whole buffer`; file e staging sono preservati, nessun unsigned commit o cambio
+della configurazione di firma. Nessun commit research creato.

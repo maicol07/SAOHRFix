@@ -164,7 +164,8 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
           production_builder: Callable[[int, int], bytes],
           rate_builder: Callable[[int, int], bytes],
           kcc_entries: dict[int, int] | None = None,
-          pc_entries: dict[int, int] | None = None) -> None:
+          pc_entries: dict[int, int] | None = None,
+          observer: Callable[[], bool] | None = None) -> None:
     identity = resolve(reader, pc)
     _, wrapper, kcc = identity
     ghost = struct.unpack("<Q", reader.read(kcc + 0x10, 8))[0]
@@ -270,6 +271,8 @@ def trace(reader: ProcessReader, pid: int, pc: int, seconds: float,
         print(json.dumps({"status": "logging", "kcc": hex(kcc), "seconds": seconds,
                           "monotonic_start_s": start}), flush=True)
         while time.monotonic() - start < seconds:
+            if observer is not None and observer():
+                break
             if (struct.unpack("<i", reader.read(pc + 0x9FCC, 4))[0] != identity[0]
                     or struct.unpack("<Q", reader.read(pc + 0x4C0, 8))[0] != owner
                     or struct.unpack("<Q", reader.read(owner + 0x108, 8))[0] != controller
